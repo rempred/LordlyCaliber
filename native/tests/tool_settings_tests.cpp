@@ -381,6 +381,20 @@ class ToolSettingsTests : public QObject {
             QTemporaryDir work; project.saveFolder(work.filePath("project"));
             auto restored=Project::fromRom(rom);restored.applyManifest(Project::readProject(work.filePath("project")));
             QCOMPARE(restored.tools()->json(),settings);
+            QFile oldClock(QFINDTESTDATA("fixtures/clock-v1.s"));
+            QVERIFY(oldClock.open(QIODevice::ReadOnly));
+            auto oldBytes = rom.bytes();
+            const auto legacy = Compiler(tools).assembleOwner(
+                QByteArray(".set DAY_SECONDS,90\n.set NIGHT_SECONDS,30\n") + oldClock.readAll(),
+                work.path(), "legacy_clock", 0x8016c81c, {{"CLOCK_NEXT_DATE",0x8016c5bc}}, true);
+            QCOMPARE(legacy.size(), 228);
+            oldBytes.replace(0x4271c, legacy.size(), legacy);
+            auto oldProject = Project::fromRom(Rom::fromBytes(oldBytes));
+            oldProject.loadTools();
+            QCOMPARE(oldProject.tools()->gameRules().value("dayLength"), 150);
+            QCOMPARE(oldProject.tools()->gameRules().value("nightLength"), 50);
+            oldProject.setTools(retail);
+            QCOMPARE(rebuild(oldProject,tools,work.path()).image,rom.bytes());
             const auto built=rebuild(project,tools,work.path());
             QTemporaryDir output(QFileInfo(path).absolutePath()+"/Test ROMs/native-game-rules-XXXXXX");
             QVERIFY(output.isValid());output.setAutoRemove(false);

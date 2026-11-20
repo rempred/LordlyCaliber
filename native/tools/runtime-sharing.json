@@ -3,6 +3,10 @@
     "reason": "Mission settlement is qualified against complete accepted C after canonicalizing authenticated capacity pointer references. Only its native victory-predicate call is redirected; current relocated references remain intact. Regression: scenario_battlefield_tests::exportWithGothAndExpandedArmies and mission-template-mips.cjs.",
     "ranges": [
       [
+        "00139a88",
+        "00139a90"
+      ],
+      [
         "13915c",
         "139164"
       ],
@@ -36,8 +40,8 @@
     "reason": "Goth builds its complete accepted settlement C first. Mission linking then authenticates that configured owner and redirects only its victory-predicate call. canonicalMissionImage reverses that authenticated call for Goth readers and subsequent edits. Regression: scenario_battlefield_tests::exportWithGothAndExpandedArmies and mission-template-mips.cjs.",
     "ranges": [
       [
-        "1399c0",
-        "139ab4"
+        "1390f0",
+        "139c10"
       ]
     ]
   },
@@ -333,7 +337,7 @@
     "ranges": [
       [
         "00133c50",
-        "00133c58"
+        "00133c5c"
       ]
     ]
   },
@@ -342,7 +346,7 @@
     "ranges": [
       [
         "0021d4d4",
-        "0021d4dc"
+        "0021d4e0"
       ]
     ]
   },
@@ -773,7 +777,7 @@
     ]
   },
   "capacity-references + tools/game-rules.json": {
-    "reason": "CapacityRuntimeBuild verifies original operands and composes its relocation map after other owners; Project::fromRom restores authenticated before-images for model readers. Full attack C also receives relocated source/roster symbols. Regression: capacityPublicExport; repeatedStrikesExportAndReopen expanded-army rows and attack-capacity-mips.cjs (new, pending build).",
+    "reason": "Capacity authenticates and relocates the source and roster operands after game rules builds its configured C. Goth variants record their own settlement pool operands. The editor restores the authenticated operands when reopening. Covered by capacityPublicExport, repeatedStrikesExportAndReopen and exportWithGothAndExpandedArmies.",
     "ranges": [
       [
         "00133804",
@@ -826,6 +830,38 @@
       [
         "00133df0",
         "00133df4"
+      ],
+      [
+        "0013915c",
+        "00139164"
+      ],
+      [
+        "00139174",
+        "0013917c"
+      ],
+      [
+        "001394a4",
+        "001394a8"
+      ],
+      [
+        "001394ac",
+        "001394b0"
+      ],
+      [
+        "0013994c",
+        "00139954"
+      ],
+      [
+        "00139970",
+        "00139978"
+      ],
+      [
+        "00139a88",
+        "00139a90"
+      ],
+      [
+        "00139b10",
+        "00139b18"
       ]
     ]
   },
@@ -1226,6 +1262,10 @@
     "reason": "Table linking runs before capacity installation, preserving current squad pointers; reopen canonicalizes table references and authenticated capacity patches independently. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
     "ranges": [
       [
+        "00139a88",
+        "00139a90"
+      ],
+      [
         "13915c",
         "139164"
       ],
@@ -1259,8 +1299,8 @@
     "reason": "The payout constructor is located in the configured Goth/reserve C variant, then normalized for subsequent owner authentication. Verified by scenario_battlefield_tests::exportWithGothAndExpandedArmies (legacy and extended slots), mission_program_capacity_tests and mission-tables-mips.cjs.",
     "ranges": [
       [
-        "1399c0",
-        "139ab4"
+        "1390f0",
+        "139c10"
       ]
     ]
   },

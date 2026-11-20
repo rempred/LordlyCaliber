@@ -29,6 +29,21 @@ module.exports=function({m,read,call,rom,symbols,entries,run,work,native,reset,g
   }
   assert.equal(m.get('sp'),sp);return pc;
  }
+ setup();
+ const sourcePool=symbols.lc_capacity_sources, deployment=symbols.lc_capacity_deployment_rows;
+ m.load(sourcePool,Buffer.alloc(61*25,0x65));
+ m.load(deployment,Buffer.alloc(10*11,0x42));
+ for(let i=1;i<10;i+=2)m.w8(deployment+i*11+1,0x80);
+ m.load(symbols.lc_enemy_characters,Buffer.alloc(256*52,0x55));
+ m.load(symbols.lc_enemy_types,Buffer.alloc(256,1));
+ assert.equal(execute(0x45f30),stop);
+ assert.deepEqual(read(sourcePool,30*25),Buffer.alloc(30*25,0x65));
+ assert.deepEqual(read(sourcePool+30*25,31*25),Buffer.alloc(31*25));
+ for(let i=0;i<10;++i)assert.deepEqual(read(deployment+i*11,11),Buffer.alloc(11,i%2?0:0x42));
+ assert.deepEqual(read(symbols.lc_enemy_characters,52),Buffer.alloc(52,0x55));
+ assert.deepEqual(read(symbols.lc_enemy_characters+52,255*52),Buffer.alloc(255*52));
+ assert.deepEqual(read(symbols.lc_enemy_types+1,255),Buffer.alloc(255));
+ hookChecks++;
  for(const enemy of [false,true])for(const id of enemy?[1,99,100,128,219,220,254]:[100,119,219]){
   const legacy=enemy?0x801953f0:0x80190f80;
   const hp=enemy?symbols.lc_enemy_soldier_hp+2*id:legacy+2*id-196;

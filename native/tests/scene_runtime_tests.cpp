@@ -1179,6 +1179,27 @@ class SceneRuntimeTests : public QObject {
         QVERIFY_THROWS_EXCEPTION(Error, display.complete(2));
         qInfo() << snapshots << "original display requests, task counts and VI black states agree";
     }
+    void controllerQueryPlayback() {
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Private ROM required");
+        const auto rom = Rom::open(path);
+        auto scenes = ScenePrograms::load(rom);
+        struct Query { quint16 pressed; quint32 mask, expected; bool enters; };
+        for (const auto &q : {Query{0, 0x8000, 0, false}, Query{0x8000, 0x8000, 0, true},
+                              Query{0x4000, 0x8000, 1, true}, Query{0x8000, 0, 0x8000, true},
+                              Query{0xffff, 0x10000, 1, true}}) {
+            const QVector<quint32> words{0x56, 0x57, 0, q.expected, q.mask, 1,
+                                         0x80000002U, 0, 0x80000000U, 0x80000001U, 0xff000006U};
+            QByteArray script(words.size() * 4, 0);
+            for (int i = 0; i < words.size(); ++i) put32(script, i * 4, words[i]);
+            scenes.replace(SceneId(scenes.original().selectors()[0]), script);
+            ScenePlayback scene(rom, scenes.runtimeDirectors(), 0, {}, SceneCameras::freshModeTwo(rom));
+            scene.setImageInput({}, q.pressed);
+            scene.director().setCounter(0);
+            QCOMPARE(scene.advance(), ScenePlayback::Advanced);
+            QCOMPARE(scene.director().state().counter, quint32(q.enters));
+        }
+    }
     void displayControlPlayback() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

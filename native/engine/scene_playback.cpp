@@ -298,7 +298,9 @@ bool ScenePlayback::command(quint32 opcode, const QVector<quint32> &args, int &v
     }
     if (opcode == 0x57) {
         if (args.size() != 3) throw Error("Controller mask query requires three operands");
-        value = (pressed_ & quint16(args[2])) != 0;
+        // func_002864F8 tests the full mask before reading the effective pad word.
+        const quint32 mask = args[2];
+        value = mask ? (pressed_ & mask) == 0 : pressed_;
         return true;
     }
     if (opcode == 0xbe && activeContext_ >= 0 && contexts_[activeContext_].chaosBand) {

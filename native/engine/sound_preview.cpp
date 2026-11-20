@@ -50,6 +50,10 @@ static SoundPreview render(const Rom &rom, int request,
     m.mount(0x80070000, bytes.mid(0x400, 0x2ec00), true);
     // Resident libmus tables/constants; placement confirmed by their callers.
     m.mount(0x800a7c00, bytes.mid(0x38000, 0x7000), false);
+    // func_00016cdc scales each channel with opposite ends of this signed Q15 table.
+    std::array<double, 128> panGain;
+    for (size_t i = 0; i < panGain.size(); ++i)
+        panGain[i] = qint16(m.half(0x800a9d40 + quint32(i * 2))) / 32768.;
     m.mount(bank, bytes.mid(0x423ff0, 0x5ce0), false);
     m.mount(effects, bytes.mid(0x4e3140, 0xde70), false);
     // Game-side request queue, including duplicate/priority/handle handling.
@@ -277,8 +281,8 @@ static SoundPreview render(const Rom &rom, int request,
                                      : std::min(at + 1, int(s.pcm.size()) - 1);
                 const double value =
                     (s.pcm[at] * (1 - fraction) + s.pcm[next] * fraction) * v.volume;
-                const double pan = v.pan / 127.;
-                const double partLeft = value * std::sqrt(1 - pan), partRight = value * std::sqrt(pan);
+                const double partLeft = value * panGain[v.pan];
+                const double partRight = value * panGain[127 - v.pan];
                 left += partLeft;
                 right += partRight;
                 if (collectParts && v.part >= 0) {

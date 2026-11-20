@@ -684,6 +684,37 @@ class AudioCuesTests : public QObject {
             QFAIL(e.what());
         }
     }
+    void stereoPanFromCurrentRom() {
+        const auto original = rom();
+        AttackSound tone;
+        tone.name = "Pan reference";
+        tone.pcm.resize(6400);
+        for (int i = 0; i < tone.pcm.size(); i += 2)
+            qToLittleEndian<qint16>(12000, tone.pcm.data() + i);
+        const auto baseline = renderImportedSoundPreview(original, tone, {}, true);
+        QCOMPARE(baseline.voices, 1);
+        QCOMPARE(baseline.parts.size(), 1);
+        for (int muted : {0, 1}) {
+            auto bytes = original.bytes();
+            put16(bytes, 0x3a140 + 2 * (muted ? 63 : 64), 0);
+            const auto preview = renderImportedSoundPreview(Rom::fromBytes(bytes), tone, {}, true);
+            auto check = [muted](const QByteArray &actual, const QByteArray &expected) {
+                QCOMPARE(actual.size(), expected.size());
+                bool audible = false;
+                for (int i = 0; i < actual.size(); i += 4) {
+                    QCOMPARE(qFromLittleEndian<qint16>(actual.constData() + i + 2 * muted), qint16(0));
+                    const int other = i + 2 * (1 - muted);
+                    const auto sample = qFromLittleEndian<qint16>(actual.constData() + other);
+                    QCOMPARE(sample, qFromLittleEndian<qint16>(expected.constData() + other));
+                    audible |= sample != 0;
+                }
+                QVERIFY(audible);
+            };
+            QCOMPARE(preview.parts.size(), 1);
+            check(preview.pcm, baseline.pcm);
+            check(preview.parts.first().pcm, baseline.parts.first().pcm);
+        }
+    }
     void soundRendering() {
         try {
             const auto source = rom();

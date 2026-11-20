@@ -1637,7 +1637,20 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
                 }
                 if (image.mid(owner.offset, owner.size) != p.rom().bytes().mid(owner.offset, owner.size))
                     throw Error("Another rebuild owner overlaps the " + owner.name + " rule");
-                const auto bytes = owner.compiledRecovery ? compileStatusRecovery(owner, compiler, directory) : owner.data
+                QByteArray bytes;
+                if (owner.name == "clock") {
+                    const auto &rules = p.tools()->gameRules();
+                    const int day = rules.value("dayLength") * 60 / 100;
+                    const int night = rules.value("nightLength") * 60 / 100;
+                    if (day == 60 && night == 60) {
+                        bytes = acceptedRomBytes(owner.offset, owner.size);
+                    } else {
+                        const auto sites = QJsonDocument::fromJson(readFile(":/game/tools/game-rules.json")).object();
+                        const auto recipe = sites["clock"].toObject()["compiled"].toObject();
+                        bytes = compiler.compileQualifiedOwner(recipe, directory, "rule_clock").code;
+                        bytes.append(char(0xc2)).append(char(0)).append(char(night)).append(char(day));
+                    }
+                } else bytes = owner.compiledRecovery ? compileStatusRecovery(owner, compiler, directory) : owner.data
                     ? compiler.compileData(owner.expected, directory, "rule_" + owner.name)
                     : compiler.assembleOwner(owner.source, directory, "rule_" + owner.name,
                                              owner.address, owner.symbols, true);

@@ -202,10 +202,18 @@ GameRules GameRules::load(const Rom &input) {
                 if(!found) throw Error("Resistance calculation is unrecognized; its existing code will be preserved.");
             } else if (name == "clock") {
                 if (sha256(bytes) != site["sha256"].toString().toLatin1()) {
-                    const int night=u16(bytes,66),day=u16(bytes,78);
-                    put16(canonical,66,60);put16(canonical,78,60);
-                    if (sha256(canonical) != site["authoredSha256"].toString().toLatin1() ||
-                        day<15 || day>240 || day%15 || night<15 || night>240 || night%15)
+                    int day, night;
+                    if (u8(bytes,224) == 0xc2 && u8(bytes,225) == 0 &&
+                        sha256(bytes.first(224)) == site["compiled"].toObject()["sha256"].toString().toLatin1()) {
+                        night=u8(bytes,226);day=u8(bytes,227);
+                    } else {
+                        // Earlier releases stored the settings in instruction operands.
+                        night=u16(bytes,66);day=u16(bytes,78);
+                        put16(canonical,66,60);put16(canonical,78,60);
+                        if (sha256(canonical) != site["authoredSha256"].toString().toLatin1())
+                            throw Error("Clock code is unrecognized; its existing bytes will be preserved.");
+                    }
+                    if (day<15 || day>240 || day%15 || night<15 || night>240 || night%15)
                         throw Error("Clock code is unrecognized; its existing bytes will be preserved.");
                     result.values_["dayLength"]=day*100/60;
                     result.values_["nightLength"]=night*100/60;
@@ -304,10 +312,6 @@ QVector<RuleBuild> GameRules::builds() const {
         } else if(name=="resistance") {
             build.expected=resistanceCode(value("resistanceStrength"));build.source=words(build.expected);
         } else if(name=="clock") {
-            const int day=value("dayLength")*60/100,night=value("nightLength")*60/100;
-            if(day==60 && night==60) build.source=resource("clock-retail.s");
-            else build.source=QString(".set DAY_SECONDS,%1\n.set NIGHT_SECONDS,%2\n").arg(day).arg(night).toLatin1()+resource("clock.s");
-            build.symbols={{"CLOCK_NEXT_DATE",0x8016c5bc}};
             build.expected.clear();
         } else if(name=="tactics") {
             const QStringList keys{"tacticAuto","tacticStrong","tacticLeader","tacticWeak"};

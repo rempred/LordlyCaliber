@@ -37,6 +37,7 @@ int lordly_audio_command(LordlySceneAudio *s, const LordlyAudioInputs *in, uint3
             sink(user, LORDLY_AUDIO_PENDING, context, a[2], 10);
         return 1;
     case 0x6f:
+        /* func_002831E0 passes the dispatcher's full gain in a1 to both services. */
         sink(user, context == 7 ? LORDLY_AUDIO_BUS_GAIN_PENDING : LORDLY_AUDIO_GAIN,
              context == 7 ? 0 : context, a[1], 0);
         return 1;

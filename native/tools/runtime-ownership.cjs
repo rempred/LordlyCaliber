@@ -17,7 +17,13 @@ function claims(){
  for(const feature of read('tools/displays.json').features)
   for(const row of feature.sites)add('display-'+feature.name,row.name,row.rom,row.size);
  for(const file of ['tools/game-rules.json','tools/status-effects.json'])
-  for(const [name,row] of Object.entries(read(file)))add(file,name,row.offset,row.size);
+  for(const [name,row] of Object.entries(read(file))){
+   if(name==='goth'){
+    const owner=read('tools/goth-owner.json').retail;
+    add(file,name,owner.start,owner.size);
+    for(const table of owner.tables)add(file,'settlement switch table',table.start,table.size);
+   }else add(file,name,row.offset,row.size);
+  }
  for(const file of ['encounters/custom-owners/catalog.json','classes/save-owners.json','shops/owners.json','scenarios/capacity/owners.json'])
   for(const row of read(file).owners)add(file,row.name||row.symbol||'',row.start,row.size);
  // Movement replaces entire native owners, including maintained capacity
@@ -62,7 +68,8 @@ function claims(){
   for(const row of read(file).owners)
    for(const ref of row.patches)add(file,row.start.toString(16),ref.site,4);
  for(const row of read('scenarios/capacity-extra.json').patches)add('capacity-extra',row.name,row.site,row.end-row.site);
- for(const row of read('scenarios/capacity-predicates.json').patches)add('capacity-predicates',row.name,row.hook,8);
+ for(const row of read('scenarios/capacity-predicates.json').patches)
+  add('capacity-predicates',row.name,row.hook,row.expected.length*4);
  for(const row of read('campaign/owners.json').owners)add('campaign',row.start.toString(16),row.start,row.end-row.start);
  const affinity=fs.readFileSync(path.resolve(root,'../engine/leader_affinity.h'),'utf8')
   .match(/offset\s*=\s*(0x[\da-f]+),\s*size\s*=\s*(0x[\da-f]+)/i);
@@ -96,7 +103,12 @@ function claims(){
  const campaignSlot=campaignSource.match(/constexpr\s+quint32\s+dispatch\s*=\s*(0x[\da-f]+)/i);
  if(!campaignSlot)throw Error('New Campaign dispatch declaration changed');
  add('new-campaign','opcode9 dispatch slot',parseInt(campaignSlot[1],16),4);
- const settlement=read('tools/goth-owner.json').retail;
+ const settlementOwners=read('tools/goth-owner.json'),settlement=settlementOwners.retail;
+ const settlementWords=new Set();
+ for(const variant of [settlementOwners.plain,settlementOwners.reserve])
+  for(const ref of variant.capacityReferences)
+   for(const offset of [ref.high,ref.low])settlementWords.add(settlement.start+offset);
+ for(const at of settlementWords)add('capacity-references','configured settlement pool reference',at,4);
  add('authored-missions','complete accepted mission settlement owner',settlement.start,settlement.size);
  const missionSource=fs.readFileSync(path.resolve(root,'../engine/mission_tables.cpp'),'utf8');
  const missionRefs=missionSource.match(/constexpr Reference references\[\] = \{([\s\S]+?)\n\};/);

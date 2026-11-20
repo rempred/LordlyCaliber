@@ -200,6 +200,19 @@ for(const compressed of [false,true]){
   assert.deepEqual(migrated.subarray(to,to+n),legacy.subarray(from,from+n));
  flush();assert.deepEqual(cartridge,before);assert.equal(writes,oldWrites);legacyReads++;
 }
-const report={loaderChecks:4,activationChecks,dispatchArmies,dispatchRefusals,legacyReads,writes,sourceSlots:61,physicalBytes:32768,maximumAllocation,largestRequest,peakLiveBytes,
+// Execute the public export's world-map reset entry, including its emitted jump.
+// Keep distinct sentinels for retained player rows, template zero and metadata.
+const metadata=0x801969b8;
+m.load(sources,Buffer.alloc(61*25,0x35));
+m.load(storage.lc_enemy_characters,Buffer.alloc(256*52,0x67));
+m.load(metadata,Buffer.alloc(10*11,0x52));
+for(let i=0;i<10;i+=2)m.w8(metadata+i*11+1,0x80);
+call(0x80170030);
+assert.deepEqual(read(sources,30*25),Buffer.alloc(30*25,0x35));
+assert.deepEqual(read(enemySources,31*25),Buffer.alloc(31*25));
+assert.deepEqual(read(storage.lc_enemy_characters,52),Buffer.alloc(52,0x67));
+assert.deepEqual(read(storage.lc_enemy_characters+52,255*52),Buffer.alloc(255*52));
+for(let i=0;i<10;i++)assert.deepEqual(read(metadata+i*11,11),Buffer.alloc(11,i%2?0x52:0));
+const report={loaderChecks:4,resetEntry:true,activationChecks,dispatchArmies,dispatchRefusals,legacyReads,writes,sourceSlots:61,physicalBytes:32768,maximumAllocation,largestRequest,peakLiveBytes,
  scope:'Actual public-export code and native callbacks in private MIPS RAM with guarded allocation and simulated SRAM; no emulator session.'};
 fs.writeFileSync(path.join(work,'save-load-report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));

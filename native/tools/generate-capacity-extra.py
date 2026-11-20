@@ -105,7 +105,7 @@ add(0x41bcc,0x41bd4,'''andi $a0, $s5, 255
 jal lc_capacity_delete_enemy
 nop
 '''+jump('lc_continue'),dict(lc_continue=0x41bfc),'Enemy deletion retains tags for surviving source references')
-add(0x45f30,0x45f38,jump('lc_enemy_clear_members'),reason='Reset all tagged handles while retaining template0')
+add(0x45f30,0x45f38,jump('lc_enemy_reset_army'),reason='Reset enemy handles, enemy sources and flagged deployment records, retaining template0')
 add(0x23b048,0x23b050,jump('lc_capacity_neutral_construct'),reason='Dedicated source60 for temporary encounter')
 add(0x21bfac,0x21c044,'''jal lc_capacity_neutral_cleanup
 nop

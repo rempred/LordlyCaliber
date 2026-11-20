@@ -1,4 +1,4 @@
-# Shared game clock, z64 0x4271c / RAM 0x8016c81c, original 0xe4-byte owner.
+# Previous editor format for testing old exported ROMs, z64 0x4271c / RAM 0x8016c81c.
 # Only the number of internal seconds per displayed minute changes. Existing
 # scheduler speed, save fields, hour boundaries and native calendar remain.
 addiu $sp,$sp,-24

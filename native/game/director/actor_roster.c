@@ -1,15 +1,7 @@
 #include "actor_roster.h"
-/* ROM45E5C: byte equality followed by the five native appearance families. */
+extern int func_00045e5c(uint8_t a, uint8_t b);
 int lordly_roster_same(uint8_t a, uint8_t b) {
-    static const uint8_t families[5][2] = {
-        {0x51, 0x53}, {0x54, 0x55}, {0x56, 0x57}, {0x5f, 0x60}, {0x63, 0x64}};
-    if (a == b)
-        return 1;
-    for (int i = 0; i < 5; ++i)
-        if (a >= families[i][0] && a <= families[i][1] && b >= families[i][0] &&
-            b <= families[i][1])
-            return 1;
-    return 0;
+    return func_00045e5c(a, b);
 }
 int lordly_roster_select(int32_t wanted[2], uint32_t flags, int32_t source) {
     const int deployed = (flags >> 8) & 1, leader = (flags >> 9) & 1;

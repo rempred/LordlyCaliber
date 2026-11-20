@@ -451,9 +451,13 @@ class EngineTests : public QObject {
             QVERIFY(coverage.codeRegions >= 1611);
             QFile compiledBaseline(":/generated/accepted-rom.bin"); QVERIFY(compiledBaseline.open(QIODevice::ReadOnly));
             const auto compiled = compiledBaseline.readAll();
-            QSet<quint32> additions{0x40ff4,0x41098,0xc4650,0xc9850,0x1a9290,0x1ad0e4,0x1ad8cc};
+            QSet<quint32> additions{0x40ff4,0x41098,0xc4650,0xc9850,0x1a9290,0x1ad0e4,0x1ad8cc,
+                                    0x4271c,0x45e5c,0x45f30,0x16cdc,0x2864f8,0x2831e0};
             for(qsizetype at=44;at<compiled.size();){const auto start=u32(compiled,at),size=u32(compiled,at+8),code=u32(compiled,at+12);if(code)additions.remove(start);at+=16+size;}
             QVERIFY(additions.isEmpty()); // New sources must be in the executable's active ROM baseline.
+            QCOMPARE(acceptedRomBytes(0x15560,96),rom.bytes().mid(0x15560,96)); // Native alignment is part of this source.
+            QCOMPARE(acceptedRomBytes(0x17664,324),rom.bytes().mid(0x17664,324));
+            QVERIFY_THROWS_EXCEPTION(Error,acceptedRomBytes(0x17664,332)); // Original ASM owns the trailing eight bytes.
             QVERIFY(coverage.dataRegions > 0);
             QCOMPARE(coverage.retainedRegions, 0);
             QVERIFY(image == rom.bytes());

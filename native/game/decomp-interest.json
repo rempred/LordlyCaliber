@@ -253,9 +253,9 @@
       "symbols": ["func_002ABB3C", "func_002AB574", "func_00045E5C"],
       "editorFiles": ["game/director/actor_roster.c", "engine/scene_actors.cpp", "game/director/story_cast.c"],
       "editorUse": "partial",
-      "symbolUses": {"func_002ABB3C": "adapted"},
+      "symbolUses": {"func_002ABB3C": "adapted", "func_00045E5C": "original"},
       "benefit": "Keep roster selection, equivalent appearances and leader fallback aligned with recovered behavior, including dynamic scenes such as 01FA8BF4.",
-      "preserve": "002ABB3C already has a host adaptation; the predicates are reconstructed. Story-script cast choices are separate data/logic and are not automatically replaced by a roster function."
+      "preserve": "Cutscene roster, story cast and party queries call the original 00045E5C predicate. Preserve script priority and the first matching record's availability."
     },
     {
       "id": "actor-motion", "priority": 1,
@@ -291,6 +291,7 @@
       "symbols": ["func_0029B78C", "func_0029BA80", "func_0029EAFC", "func_002ADF9C"],
       "editorFiles": ["game/director/actor_material.c", "game/director/actor_render.c", "engine/actor_render_state.cpp"],
       "editorUse": "reconstructed",
+      "symbolUses": {"func_0029B78C": "adapted", "func_002ADF9C": "adapted"},
       "benefit": "Use recovered material/color behavior when improving scene appearance.",
       "preserve": "The native renderer remains responsible for drawing. Current adaptations cover the relevant CPU behavior, not every display-list operation."
     },
@@ -394,8 +395,8 @@
       "symbols": ["func_002A90EC", "func_002A91E4", "func_002A9258"],
       "editorFiles": ["game/director/scene_projection.c", "engine/actor_renderer.cpp"],
       "editorUse": "partial",
-      "symbolUses": {"func_002A91E4": "adapted"},
-      "benefit": "Replace reconstructed init/update around the already adapted accepted start routine.",
+      "symbolUses": {"func_002A90EC": "adapted", "func_002A91E4": "adapted", "func_002A9258": "adapted"},
+      "benefit": "Preview projection and camera initialization use the retail defaults, field layout and interpolation steps.",
       "preserve": "Frame count narrowing, float order and separate coordinate spaces."
     },
     {
@@ -458,6 +459,7 @@
       "symbols": ["func_000BEA34", "func_000B86F8", "func_000B86C4", "func_000B81CC"],
       "editorFiles": ["game/army/leader.c", "game/army/soldier_reserve.c", "engine/save_document.cpp"],
       "editorUse": "partial",
+      "symbolUses": {"func_000B86C4": "adapted"},
       "benefit": "Use recovered helpers for reserve allocation, group HP/count and fixed leaders.",
       "preserve": "B81CC is a larger owner: only its new-group HP segment is currently adapted. Preserve packed-save ownership, maximum capacities and Undo."
     },

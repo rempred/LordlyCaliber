@@ -1,6 +1,5 @@
-/* Portable reconstruction of original ROM 29B78C..29B9E0 and
- * 29BA80..29BDC4. Original assembly at Decomp 62cc7ef4 is the reference;
- * these functions are not an accepted matching-C translation. */
+/* Material construction follows accepted 0029B78C. The caller has already
+ * consumed the slot operand. Update behavior follows ROM 29BA80..29BDC4. */
 #include "actor_material.h"
 #include <math.h>
 static int half(const uint8_t *p) {

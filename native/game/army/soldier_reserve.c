@@ -1,7 +1,8 @@
 /* Host reconstruction of US Rev0 Army ROM B86F8..B876C (group count),
  * B86C4..B86F8 (free ID), and B81CC..B8258 (new group HP).
  * Complete helper/block bytes match the captured Army image at delta801135A0.
- * Not accepted matching C. Preserve native truncation, including count1 at HP0.
+ * The free slot loop follows accepted 000B86C4 with the Save document's HP
+ * array supplied by its caller. Preserve native truncation, including count1 at HP0.
  * The editor validates pool, allocation and packed-save bounds separately. */
 #include "soldier_reserve.h"
 uint16_t lordly_soldier_count(uint16_t hp, uint16_t maximum_hp) {

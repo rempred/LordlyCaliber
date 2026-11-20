@@ -1,5 +1,20 @@
 # Native export source audit
 
+## November 20 contributor matches
+
+At verified fingerprint `43DEDF47`, the audit found zero whole-function
+assembly replacements and zero partial instruction adaptations eligible for
+migration to an accepted C owner. There are 38 extension hook sites inside
+accepted C, including 22 of the 102 expanded-army sites. These hooks implement
+editor behavior such as indexing expanded tables. One hook at z64 ROM
+`0x0015DF7C` also has an interior entry that callers use. Replacing a hook
+requires preserving its extended behavior and all live entries.
+
+The retail clock now uses its accepted owner and custom durations compile
+from C. The older custom-clock assembly is a compatibility test fixture.
+The [intake and per-function inventory](decomp-intake.md#november-20-contributor-matches)
+record the other export and preview decisions.
+
 ## Actor placement and briefing — 2026-11-17
 
 The [actor intake](decomp-intake.md#november-17-actor-placement-and-briefing)

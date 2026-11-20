@@ -1,7 +1,6 @@
 #include "scene_projection.h"
-/* Start adapts accepted func_002A91E4.c at Decomp commit
- * f53a12e53f3f6e7e389cd6e011b5be25d31bde15. Init/update are portable
- * reconstructions of ROM2A90EC and ROM2A9258, not matching-C claims. */
+/* Host record layout for accepted 002A90EC, 002A91E4 and 002A9258.
+ * SceneCameras owns the camera globals reset alongside projection. */
 #include <math.h>
 #include <string.h>
 static float read_float(const LordlySceneProjection *p, int at) {

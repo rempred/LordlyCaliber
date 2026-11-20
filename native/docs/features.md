@@ -1382,7 +1382,10 @@ names/populations automatically. Export preserves unknown ESET/town bytes.
 ### Clock and battle rule controls
 
 Scenario Settings has independent day/night duration percentages, global to all
-missions (25–400%,25-point steps). Tools has named tactic alignment contributions
+missions (25–400% in 25-point steps). A longer day or night slows the clock
+while keeping seconds in the normal 0–59 range, including in a mission save.
+Reloading preserves hours, minutes and seconds. The pacing accumulator starts
+fresh when the game reloads its clock code. Tools has named tactic alignment contributions
 (−5..+5 per kill), movement fatigue and rest recovery rates (25–400%). Eligibility,
 night/equipment modifiers, fatigue/HP caps and the native calendar remain. Cycle
 rates are rounded to whole native update intervals; they are not real-time timers.

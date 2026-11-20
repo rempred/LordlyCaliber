@@ -1,6 +1,7 @@
 #include "enemy-capacity.h"
 
 extern unsigned short lc_enemy_soldier_max_hp;
+extern unsigned char lc_capacity_deployment_rows[10][11];
 extern void lc_capacity_clear(void *data, int size);
 extern void lc_capacity_character(int index, const unsigned char *spec, int selector,
                                   unsigned char flag, unsigned char source);
@@ -47,6 +48,20 @@ void lc_enemy_reset(void)
     lc_capacity_clear(lc_enemy_types, LC_ENEMY_HANDLES);
     lc_capacity_clear(lc_enemy_soldier_hp, LC_ENEMY_HANDLES * 2);
     lc_capacity_clear(lc_enemy_soldier_state, LC_ENEMY_HANDLES);
+}
+
+/* func_00045f30 resets the enemy members, their source rows and the flagged
+ * deployment records. The expanded pool still reserves character zero. */
+void lc_enemy_reset_army(void)
+{
+    int i;
+    lc_enemy_clear_members();
+    lc_capacity_clear(lc_capacity_sources + LC_PLAYER_SOURCES,
+                      sizeof(lc_capacity_sources[0]) * (LC_TOTAL_SOURCES - LC_PLAYER_SOURCES));
+    for (i = 0; i < 10; ++i) {
+        if (lc_capacity_deployment_rows[i][1] & 0x80)
+            lc_capacity_clear(lc_capacity_deployment_rows[i], sizeof(lc_capacity_deployment_rows[i]));
+    }
 }
 
 void lc_enemy_clear_members(void)

@@ -1,5 +1,49 @@
 # Using newly accepted Decomp C
 
+## November 20 contributor matches
+
+Decomp PR 1 added 926 pure-C owners between `43a49d01` and `7177de63`.
+All 926 participate in ordinary ROM export. The accepted library now has
+2,611 owners across 2,480 producer sources, including 35 older hybrid owners.
+The export compiler reproduced 2,626 code regions and 78 read-only regions.
+An unedited US Rev 0 export reopened and compared byte for byte with the
+original 40 MiB input in its native byte order.
+
+| Editor behavior | What the matching C established or changed |
+| --- | --- |
+| Cutscene controller queries | Director command `0x57` returns the pressed buttons when the mask is zero. A nonzero mask succeeds when none of its buttons were pressed. The title script uses this distinction for A and B. Preview handles the normal controller path. The alternate native directional-input mode still needs an input source in preview. |
+| Actor identity | Story cast and army roster selection call the same accepted `func_00045e5c` predicate for the five groups of interchangeable identities. |
+| Sound preview | Mixed and solo voices read the current ROM’s 128-entry stereo pan table in opposite directions for left and right. This also respects an edited table. Story audio commands expose the native request and gain. Audible story playback still needs the resident audio state. |
+| Expanded armies | The native reset clears enemy sources and flagged deployment rows. The expanded version now does both for its relocated army and preserves player records and unflagged rows. |
+| Day and night duration | At retail settings export uses the exact accepted clock. Custom durations pace the native second and date helpers while keeping the saved seconds in 0–59. Previously a long day could exceed the six-bit save field. The earlier custom-clock format still reopens. |
+| Mission rewards and expanded armies | The export ownership check follows the complete compiled settlement function, its switch tables, and the actual operand locations per build variant. This covers authored missions combined with custom Goth and expanded armies. |
+
+The [per-function inventory](accepted-c-20261120.tsv) gives each new owner’s
+physical ROM location, export role, editor consumers and references. It
+identifies 170 owners with a separate editor consumer and 756 used in the
+exact game baseline with no separate consumer identified. Of the 926, 515
+are eligible through a known preview instruction loader. That number overlaps
+the other categories. The generator records actual instruction entry separately
+for the bounded sound replays. A loaded range alone cannot establish which
+branches executed.
+
+To reproduce the inventory from an editor checkout, supply the matching
+Decomp checkout and a local retail ROM. For an intake whose verified build
+lives in a different worktree, pass the sealed schema-7 state file to the
+source audit. The audit authenticates the build reports and the source and
+dependency bytes in the chosen checkout.
+
+```powershell
+node native/tools/accepted-c-coverage.cjs --native native --decomp $decomp --base 43a49d01 --head 7177de63 --rom $rom --output $inventoryJson --table $inventoryTsv
+node native/tools/audit-source-selection.cjs --decomp $decomp --state $verifiedState --require-whole-owners
+```
+
+The verified fingerprint starts with `43DEDF47`. In the Director audio
+command `0x6F`, the compiled wrapper forwards the full gain in register
+`a1` to both callees. Its accepted C prototype omits that parameter. The
+portable adapter keeps the gain explicit. Decomp confirmed the calling
+convention independently.
+
 ## November 18 Liedel text renderer
 
 Decomp `e82db7aa` supplies the text renderer `func_0004fe04`, compact glyph

@@ -14,7 +14,7 @@ for(const name of ['enemy-capacity.c','enemy-capacity.h'])fs.copyFileSync(path.j
 const symbols={lc_enemy_characters:0x80300000,lc_enemy_types:0x80304000,
  lc_enemy_soldier_hp:0x80305000,lc_enemy_soldier_state:0x80306000,
  lc_capacity_sources:0x80307000,lc_capacity_active_sources:0x80308000,
- lc_enemy_soldier_max_hp:0x80309000,lc_capacity_clear:0x80000110,
+ lc_enemy_soldier_max_hp:0x80309000,lc_capacity_deployment_rows:0x801969b8,lc_capacity_clear:0x80000110,
  lc_capacity_character:0x80000120,lc_capacity_finalize:0x80000130,lc_capacity_player_construct:0x80000140};
 const run=(name,args)=>cp.execFileSync(path.join(tools,name),args,{cwd:work,encoding:'utf8'});
 run('cpp.exe',['-P','-undef','-nostdinc','enemy-capacity.c','capacity.i']);

@@ -1,6 +1,7 @@
 #include "rebuild/export_contracts.h"
 #include "engine/class_data.h"
 #include "engine/mission_tables.h"
+#include "engine/mission_runtime.h"
 #include "engine/battlefield_clone.h"
 #include "engine/creature_rewards.h"
 #include "engine/encounter_rate.h"
@@ -147,6 +148,10 @@ ExportPlan::Ranges exportOwners(const QString &step) {
     return result;
 }
 void configureExportComposition(ExportPlan &plan) {
+    // Class storage restores this authenticated dispatch before reusing the
+    // old module. Mission linking installs the exit for the newly built module.
+    plan.compose("mission-runtime", "class-runtime",
+                 {{missionExitDispatch, missionExitDispatch + missionExitDispatchCode().size()}});
     // These installers refresh checksums in the class descriptor after linking
     // already allocated native data/code. Pointer/count fields remain protected.
     constexpr auto header = ClassPlacement::descriptorRomOffset;

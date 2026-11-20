@@ -4,7 +4,20 @@
 const fs=require('node:fs'),path=require('node:path');
 const {FloatMips}=require('./float-mips.cjs');
 const rom=fs.readFileSync(process.argv[2]);
+const order=rom.readUInt32BE(0);
+if(order===0x37804012)rom.swap16();
+else if(order===0x40123780)rom.swap32();
+else if(order!==0x80371240)throw Error('Unrecognized N64 ROM byte order');
 const m=new FloatMips();m.ram=new Uint8Array(0x800000);
+const trace=process.argv.includes('--executed-rom-words') ? new Set() : null;
+if(trace){
+ const execute=m.exec.bind(m);
+ m.exec=(pc,next)=>{
+  if(pc>=0x80070000 && pc<0x8009ec00)trace.add(pc-0x8006fc00);
+  else if(pc>=0x800e9c20 && pc<0x800eb8f0)trace.add(pc-0x800aaa70);
+  return execute(pc,next);
+ };
+}
 m.load(0x80070000,rom.subarray(0x400,0x2f000));
 // Qualified resident tables and floating constants used by this family.
 m.load(0x800a7c00,rom.subarray(0x38000,0x3f000));
@@ -23,7 +36,8 @@ for(let i=0;i<68;i++)call(0x80083738,[channels+i*0x13c]);
 const id=+(process.argv[3]||303);
 // Follow the game's queue path; do not derive a libmus index from a UI label.
 m.load(0x800e9c20,rom.subarray(0x3f1b0,0x40e80));
-const requests=process.argv[4]?JSON.parse(process.argv[4]):[{tick:0,request:id}];
+const requests=process.argv[4] && process.argv[4]!=='--executed-rom-words'
+ ? JSON.parse(process.argv[4]):[{tick:0,request:id}];
 const dispatched=[];
 const execute=m.exec.bind(m);
 m.exec=(pc,next)=>{if(pc===0x80081770)dispatched.push({tick,id:m.get('a0')});return execute(pc,next);};
@@ -60,4 +74,5 @@ for(let index=0;index<rom.readUInt32BE(0x423ff0+0x20);index++){
  hashes.push(require('node:crypto').createHash('sha256').update(output).digest('hex'));
 }
 console.log(JSON.stringify({id,dispatched,ticks:Math.min(900,tick+1),voices:starts.length,limited:tick>=900,
- parts:starts.map(e=>({tick:e.tick,voice:e.voice,sampleRomOffset:parseInt(e.wave[0],16)})),hashes}));
+ parts:starts.map(e=>({tick:e.tick,voice:e.voice,sampleRomOffset:parseInt(e.wave[0],16)})),hashes,
+ ...(trace?{executedRomWords:[...trace].sort((a,b)=>a-b)}:{})}));

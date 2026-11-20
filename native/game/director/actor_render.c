@@ -1,6 +1,6 @@
 #include "actor_render.h"
 #include <math.h>
-/* ROM2ADF9C: the world draw driver applies this environment after the Actor's
+/* Accepted 002ADF9C applies this environment after the Actor's
  * own tint/material commands. The selected six-byte palette row is explicit. */
 int lordly_actor_world_environment(uint8_t rgba[4], float x, float z, const uint8_t gradient[6]) {
     float position, remaining;

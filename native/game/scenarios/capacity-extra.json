@@ -220,7 +220,7 @@
       "end": 286520,
       "address": 2148991024,
       "name": "lc_capacity_extra_00045f30",
-      "reason": "Reset all tagged handles while retaining template0",
+      "reason": "Reset enemy handles, enemy sources and flagged deployment records, retaining template0",
       "owner": {
         "start": 286512,
         "size": 352,
@@ -231,7 +231,7 @@
         2947547152
       ],
       "bindings": {},
-      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00045f30\n.type lc_capacity_extra_00045f30, @function\nlc_capacity_extra_00045f30:\nj lc_enemy_clear_members\nnop\n.size lc_capacity_extra_00045f30, . - lc_capacity_extra_00045f30\n"
+      "source": ".set noat\n.set noreorder\n.globl lc_capacity_extra_00045f30\n.type lc_capacity_extra_00045f30, @function\nlc_capacity_extra_00045f30:\nj lc_enemy_reset_army\nnop\n.size lc_capacity_extra_00045f30, . - lc_capacity_extra_00045f30\n"
     },
     {
       "site": 2338888,

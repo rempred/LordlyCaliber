@@ -97,6 +97,7 @@ CapacityRuntimeBuild prepareCapacityRuntime(quint32 base, const Rom &rom) {
     b.symbols["lc_capacity_name_work"]=base+0x9cc0;
     b.symbols["lc_capacity_quick_descriptor"]=base+0xacc0;
     b.symbols["lc_enemy_soldier_max_hp"]=0x801953f2;
+    b.symbols["lc_capacity_deployment_rows"]=0x801969b8;
     auto descriptor=rom.bytes().mid(0x5d518,64);
     if (descriptor.size()!=64 || u32(descriptor,0)!=0x80195560 ||
         u32(descriptor,4)!=52 || u32(descriptor,12)!=100 ||
