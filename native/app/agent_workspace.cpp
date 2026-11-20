@@ -1,6 +1,7 @@
 #include "app/agent_workspace.h"
 #include "app/main_window.h"
 #include "app/theme.h"
+#include "app/view_drop.h"
 #include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QAccessible>
@@ -13,12 +14,16 @@
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QDragEnterEvent>
+#include <QDragMoveEvent>
 #include <QFileDialog>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
@@ -26,9 +31,12 @@
 #include <QSemaphore>
 #include <QSlider>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QTabBar>
+#include <QTabWidget>
 #include <QTextEdit>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeView>
 #include <QWheelEvent>
 #include <iostream>
@@ -44,11 +52,103 @@ class Workspace {
     explicit Workspace(MainWindow &window) : window_(window) {}
     QJsonValue handle(const QJsonObject &command) {
         const auto op = command["op"].toString();
-        auto root = QApplication::activeModalWidget();
+        auto root = QApplication::activePopupWidget();
         if (!root)
-            root = QApplication::activePopupWidget();
+            root = QApplication::activeModalWidget();
+        auto blocking = root;
+        if (op == "windows" || op == "useWindow") {
+            QJsonArray windows;
+            for (auto w : QApplication::topLevelWidgets()) {
+                if (!w->isVisible() ||
+                    (w != &window_ && !qobject_cast<QDialog *>(w) && !qobject_cast<QMenu *>(w)))
+                    continue;
+                const int windowId = id(w);
+                windows.append(QJsonObject{{"id", windowId},
+                                           {"title", w->windowTitle()},
+                                           {"ownsInput", w == blocking},
+                                           {"main", w == &window_}});
+                if (op == "useWindow" && windowId == command["id"].toInt(-1)) {
+                    if (blocking && blocking != w)
+                        throw Error("Finish the active popup or modal dialog first");
+                    preferred_ = w;
+                    w->activateWindow();
+                    return windowId;
+                }
+            }
+            if (op == "useWindow")
+                throw Error("Choose a visible window ID from windows");
+            return windows;
+        }
+        if (!root && preferred_ && preferred_->isVisible())
+            root = preferred_;
         if (!root)
             root = &window_;
+        if (op == "pages" || op == "openPage") {
+            auto pathOf = [root](QTabBar *tabs, int index) {
+                QStringList path{tabs->tabText(index)};
+                QWidget *inside = tabs;
+                for (auto p = tabs->parentWidget(); p; p = p->parentWidget()) {
+                    if (auto stack = qobject_cast<QStackedWidget *>(p)) {
+                        auto host = qobject_cast<QTabWidget *>(stack->parentWidget());
+                        auto bar = host ? host->tabBar()
+                                        : qobject_cast<QTabBar *>(
+                                              stack->property("navigationBar").value<QObject *>());
+                        int page = stack->indexOf(inside);
+                        if (bar && page >= 0 && page < bar->count())
+                            path.prepend(bar->tabText(page));
+                    }
+                    inside = p;
+                    if (p == root)
+                        break;
+                }
+                return path;
+            };
+            const auto allTabs = [&] { return root->findChildren<QTabBar *>(); };
+            if (op == "pages") {
+                QJsonArray out;
+                for (auto tabs : allTabs()) {
+                    if (tabs->window() != root->window() || tabs->isHidden())
+                        continue;
+                    for (int i = 0; i < tabs->count(); ++i)
+                        if (tabs->isTabVisible(i))
+                            out.append(QJsonObject{
+                                {"path", QJsonArray::fromStringList(pathOf(tabs, i))},
+                                {"bar", id(tabs)},
+                                {"index", i},
+                                {"enabled", tabs->isTabEnabled(i)},
+                                {"active", tabs->isVisible() && tabs->currentIndex() == i}});
+                }
+                return out;
+            }
+            QStringList prefix;
+            for (const auto &part : command["path"].toArray()) {
+                if (!part.isString())
+                    throw Error("Use tab titles from pages");
+                prefix << part.toString();
+                QTabBar *match = nullptr;
+                int index = -1;
+                for (auto tabs : allTabs()) {
+                    if (!tabs->isVisible() || !tabs->isEnabled() ||
+                        tabs->window() != root->window())
+                        continue;
+                    for (int i = 0; i < tabs->count(); ++i)
+                        if (tabs->isTabVisible(i) && tabs->isTabEnabled(i) &&
+                            pathOf(tabs, i) == prefix) {
+                            if (match)
+                                throw Error(
+                                    "Ambiguous tab path. Use a bar ID and select its index.");
+                            match = tabs;
+                            index = i;
+                        }
+                }
+                if (!match)
+                    throw Error("Tab currently unavailable: " + prefix.join(" / "));
+                match->setCurrentIndex(index);
+            }
+            if (prefix.isEmpty())
+                throw Error("openPage needs a nonempty path from pages");
+            return QJsonArray::fromStringList(prefix);
+        }
         if (op == "controls") {
             QJsonArray out;
             const auto query = command["query"].toString();
@@ -112,6 +212,7 @@ class Workspace {
         }
         if (!obj)
             throw Error("Control is absent or has been destroyed");
+        QPointer<QObject> control(obj);
         auto w = qobject_cast<QWidget *>(obj);
         Qt::KeyboardModifiers modifiers;
         for (const auto &v : command["modifiers"].toArray()) {
@@ -127,15 +228,64 @@ class Workspace {
             else
                 throw Error("Unknown keyboard modifier: " + key);
         }
-        if (root != &window_ && obj != root && !root->findChildren<QObject *>().contains(obj))
+        if (root != &window_ && obj != root && !root->findChildren<QObject *>().contains(obj) &&
+            !root->actions().contains(qobject_cast<QAction *>(obj)))
             throw Error("An open dialog or popup owns the current input");
         auto view = qobject_cast<QAbstractItemView *>(obj);
         auto combo = qobject_cast<QComboBox *>(obj);
         auto tabs = qobject_cast<QTabBar *>(obj);
         auto button = qobject_cast<QAbstractButton *>(obj);
         auto action = qobject_cast<QAction *>(obj);
+        if (op == "menuItems" && w) {
+            QJsonArray items;
+            auto menu = qobject_cast<QMenu *>(w);
+            if (auto tool = qobject_cast<QToolButton *>(w))
+                menu = tool->menu();
+            if (!menu && !qobject_cast<QMenuBar *>(w))
+                throw Error("Select a menu or a button with a menu");
+            for (auto a : (menu ? menu->actions() : w->actions())) {
+                if (a->isVisible() && !a->isSeparator())
+                    items.append(describe(a));
+            }
+            return items;
+        }
         if (op == "inspect")
             return describe(obj);
+        if (op == "cell" && view) {
+            const auto at = modelIndex(view, command["index"].toArray(), command["column"].toInt());
+            if (!at.isValid())
+                throw Error("Choose a cell using a row path and column");
+            view->scrollTo(at);
+            const auto rect = view->visualRect(at);
+            QJsonObject result{
+                {"text", at.data().toString()},
+                {"tooltip", at.data(Qt::ToolTipRole).toString()},
+                {"value", QJsonValue::fromVariant(at.data(Qt::EditRole))},
+                {"enabled", bool(at.flags() & Qt::ItemIsEnabled)},
+                {"editable", bool(at.flags() & Qt::ItemIsEditable)},
+                {"children", view->model()->rowCount(at)},
+                {"selected", view->selectionModel()->isSelected(at)},
+                {"viewport", id(view->viewport())},
+                {"x", rect.center().x()},
+                {"y", rect.center().y()},
+                {"visible", rect.isValid() && view->viewport()->rect().intersects(rect)}};
+            if (command["decoration"].toBool()) {
+                const auto icon = at.data(Qt::DecorationRole).value<QIcon>();
+                if (!icon.isNull()) {
+                    QByteArray bytes;
+                    QBuffer out(&bytes);
+                    out.open(QIODevice::WriteOnly);
+                    const auto size = view->iconSize().isValid() ? view->iconSize() : QSize(32, 32);
+                    if (icon.pixmap(size).save(&out, "PNG"))
+                        result["png"] = QString::fromLatin1(bytes.toBase64());
+                }
+            }
+            if (at.flags() & Qt::ItemIsUserCheckable)
+                result["checkState"] = at.data(Qt::CheckStateRole).toInt();
+            if (auto editor = view->indexWidget(at))
+                result["widget"] = id(editor);
+            return result;
+        }
         if (op == "image" && w) {
             QByteArray bytes;
             QBuffer buffer(&bytes);
@@ -178,9 +328,17 @@ class Workspace {
         }
         if ((w && (!w->isEnabled() || !w->isVisible())) || (action && !action->isEnabled()))
             throw Error("Control is currently unavailable");
-        if (op == "activate" && action)
-            action->trigger();
-        else if (op == "activate" && button)
+        if (op == "activate" && action) {
+            if (auto active = qobject_cast<QMenu *>(root);
+                active && active->actions().contains(action)) {
+                active->setActiveAction(action);
+                QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+                QApplication::sendEvent(active, &press);
+            } else if (auto menu = action->menu())
+                menu->popup(root->mapToGlobal(QPoint(0, 0)));
+            else
+                action->trigger();
+        } else if (op == "activate" && button)
             button->click();
         else if (op == "activate" && qobject_cast<QMenu *>(obj))
             qobject_cast<QMenu *>(obj)->popup(w->mapToGlobal(QPoint(0, 0)));
@@ -224,11 +382,37 @@ class Workspace {
                     !view->model()->setData(index, command["value"].toVariant(), Qt::EditRole))
                     throw Error("Cell rejected edit");
             } else {
-                view->setCurrentIndex(index);
+                if (!(index.flags() & Qt::ItemIsEnabled) || !(index.flags() & Qt::ItemIsSelectable))
+                    throw Error("Cell is not selectable");
+                if (command["extend"].toBool()) {
+                    if (view->selectionMode() == QAbstractItemView::SingleSelection ||
+                        view->selectionMode() == QAbstractItemView::NoSelection)
+                        throw Error("View requires single selection");
+                    auto flags = QItemSelectionModel::Select;
+                    view->selectionModel()->setCurrentIndex(
+                        index, view->selectionBehavior() == QAbstractItemView::SelectRows
+                                   ? flags | QItemSelectionModel::Rows
+                                   : QItemSelectionModel::SelectionFlags(flags));
+                } else
+                    view->setCurrentIndex(index);
                 view->scrollTo(index);
             }
         } else if (op == "set" && w) {
             const auto value = command["value"];
+            // Forms can commit on editingFinished instead of valueChanged. Give
+            // these controls the focus transition of a completed desktop edit.
+            QPointer<QWidget> editControl =
+                (qobject_cast<QAbstractSpinBox *>(w) || qobject_cast<QLineEdit *>(w)) ? w : nullptr;
+            bool finished = false;
+            QObject observer;
+            if (auto spin = qobject_cast<QAbstractSpinBox *>(w))
+                QObject::connect(spin, &QAbstractSpinBox::editingFinished, &observer,
+                                 [&] { finished = true; });
+            if (auto line = qobject_cast<QLineEdit *>(w))
+                QObject::connect(line, &QLineEdit::editingFinished, &observer,
+                                 [&] { finished = true; });
+            if (editControl)
+                editControl->setFocus(Qt::OtherFocusReason);
             if (auto input = qobject_cast<QLineEdit *>(w)) {
                 if (input->isReadOnly() || !value.isString())
                     throw Error("Expected editable text");
@@ -265,9 +449,47 @@ class Workspace {
                     button->click();
             } else
                 throw Error("Use items/select, key or pointer for this control");
+            if (editControl && command["commit"].toBool(true)) {
+                editControl->clearFocus();
+                if (auto line = qobject_cast<QLineEdit *>(editControl.data());
+                    line && !line->hasAcceptableInput())
+                    throw Error("This field has not accepted the input");
+                // The offscreen platform may leave focus on an earlier, closed
+                // dialog. In that case clearFocus does not deliver a focus-out.
+                if (editControl && !finished)
+                    QMetaObject::invokeMethod(editControl, "editingFinished", Qt::DirectConnection);
+            }
         } else if (op == "file" && qobject_cast<QFileDialog *>(obj)) {
             auto dialog = qobject_cast<QFileDialog *>(obj);
-            dialog->selectFile(command["path"].toString());
+            const auto mode = dialog->fileMode();
+            auto paths = command["paths"].toArray();
+            if (command.contains("path")) {
+                if (!paths.isEmpty())
+                    throw Error("Choose either path or paths");
+                paths.append(command["path"]);
+            }
+            if (paths.isEmpty() || (paths.size() > 1 && mode != QFileDialog::ExistingFiles))
+                throw Error("Choose the number of files supported by this dialog");
+            QStringList names;
+            for (const auto &value : paths) {
+                const auto path = value.toString();
+                if (path.isEmpty() || path.contains('"'))
+                    throw Error("Choose a file or directory");
+                const QFileInfo file(path);
+                if ((mode == QFileDialog::ExistingFile || mode == QFileDialog::ExistingFiles) &&
+                    !file.isFile())
+                    throw Error("File does not exist: " + path);
+                if (mode == QFileDialog::Directory && !file.isDir())
+                    throw Error("Directory does not exist: " + path);
+                names << (paths.size() == 1 ? file.absoluteFilePath()
+                                            : '"' + file.absoluteFilePath() + '"');
+            }
+            auto line = dialog->findChild<QLineEdit *>("fileNameEdit");
+            if (!line)
+                throw Error("This file chooser does not expose its filename control");
+            line->setFocus();
+            line->selectAll();
+            line->insert(names.join(' '));
             QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
         } else if (op == "reject" && qobject_cast<QDialog *>(obj))
             qobject_cast<QDialog *>(obj)->reject();
@@ -292,8 +514,26 @@ class Workspace {
                           QPoint(command["dx"].toInt(), command["dy"].toInt()), held_, modifiers,
                           Qt::NoScrollPhase, false);
             QApplication::sendEvent(w, &e);
-        } else if (op == "drop" && w) {
+        } else if ((op == "drop" || op == "transfer") && w) {
             QMimeData mime;
+            std::unique_ptr<QMimeData> internal;
+            if (op == "transfer") {
+                const int sourceId = command["from"].toInt(-1);
+                auto source = sourceId >= 0 && sourceId < objects_.size()
+                                  ? qobject_cast<QAbstractItemView *>(objects_[sourceId].data())
+                                  : nullptr;
+                if (!source || !source->isVisible() || !source->isEnabled() ||
+                    !root->isAncestorOf(source) || !source->model())
+                    throw Error("Choose a visible source view");
+                const auto at =
+                    modelIndex(source, command["index"].toArray(), command["column"].toInt());
+                if (!at.isValid() || !(at.flags() & Qt::ItemIsDragEnabled))
+                    throw Error("This row cannot be dragged");
+                source->setCurrentIndex(at);
+                internal.reset(source->model()->mimeData({at}));
+                if (!internal)
+                    throw Error("The source did not supply drag data");
+            }
             QList<QUrl> urls;
             for (const auto &f : command["paths"].toArray())
                 urls.append(QUrl::fromLocalFile(f.toString()));
@@ -305,13 +545,26 @@ class Workspace {
                 mime.setData(command["mime"].toString(),
                              QByteArray::fromBase64(command["base64"].toString().toLatin1()));
             const QPoint at(command["x"].toInt(), command["y"].toInt());
-            QDragEnterEvent enter(QPointF(at), Qt::CopyAction, &mime, Qt::LeftButton, modifiers);
-            QApplication::sendEvent(w, &enter);
-            if (!enter.isAccepted())
-                throw Error("The control rejected the drag");
-            QDropEvent drop(QPointF(at), Qt::CopyAction, &mime, Qt::LeftButton, modifiers);
-            QApplication::sendEvent(w, &drop);
-            if (!drop.isAccepted())
+            auto data = internal ? internal.get() : &mime;
+            const auto dropAction = command["action"].toString(internal ? "move" : "copy");
+            if (dropAction != "move" && dropAction != "copy")
+                throw Error("Choose move or copy for a drop");
+            const auto mode = dropAction == "move" ? Qt::MoveAction : Qt::CopyAction;
+            QDragEnterEvent enter(QPointF(at), mode, data, Qt::LeftButton, modifiers);
+            QDragMoveEvent move(QPointF(at), mode, data, Qt::LeftButton, modifiers);
+            QDropEvent drop(QPointF(at), mode, data, Qt::LeftButton, modifiers);
+            auto dropView = qobject_cast<QAbstractItemView *>(w->parentWidget());
+            auto handler = dropView && dropView->viewport() == w ? dynamic_cast<ViewDrop *>(dropView) : nullptr;
+            if (handler) {
+                handler->dispatchDrop(enter, move, drop);
+            } else {
+                QApplication::sendEvent(w, &enter);
+                if (enter.isAccepted()) {
+                    QApplication::sendEvent(w, &move);
+                    QApplication::sendEvent(w, &drop);
+                }
+            }
+            if (!enter.isAccepted() || !drop.isAccepted())
                 throw Error("The control rejected the drop");
         } else if (op == "pointer" && w) {
             const QPoint at(command["x"].toInt(), command["y"].toInt());
@@ -341,6 +594,11 @@ class Workspace {
             }
         } else
             throw Error("Unsupported workspace operation for this control: " + op);
+        if (op == "set" && command["readBack"].toBool()) {
+            if (!control)
+                throw Error("Edit rebuilt this control; inspect the form again");
+            return describe(control);
+        }
         return true;
     }
 
@@ -361,6 +619,11 @@ class Workspace {
         if (auto w = qobject_cast<QWidget *>(o)) {
             if (auto a = QAccessible::queryAccessibleInterface(w))
                 d["label"] = a->text(QAccessible::Name);
+            if (auto parent = w->parentWidget()) {
+                if (auto form = qobject_cast<QFormLayout *>(parent->layout()))
+                    if (auto label = qobject_cast<QLabel *>(form->labelForField(w)))
+                        d["fieldLabel"] = label->text();
+            }
             d["enabled"] = w->isEnabled();
             d["width"] = w->width();
             d["height"] = w->height();
@@ -369,6 +632,24 @@ class Workspace {
             d["y"] = pos.y();
             if (w->parentWidget())
                 d["parent"] = id(w->parentWidget());
+            if (auto box = qobject_cast<QGroupBox *>(w))
+                d["title"] = box->title();
+            if (auto box = qobject_cast<QSpinBox *>(w)) {
+                d["minimum"] = box->minimum();
+                d["maximum"] = box->maximum();
+                d["step"] = box->singleStep();
+                d["value"] = box->value();
+            } else if (auto decimal = qobject_cast<QDoubleSpinBox *>(w)) {
+                d["minimum"] = decimal->minimum();
+                d["maximum"] = decimal->maximum();
+                d["step"] = decimal->singleStep();
+                d["decimals"] = decimal->decimals();
+                d["value"] = decimal->value();
+            }
+            if (auto view = qobject_cast<QAbstractItemView *>(w))
+                d["viewport"] = id(view->viewport());
+            if (auto combo = qobject_cast<QComboBox *>(w))
+                d["index"] = combo->currentIndex();
             if (!w->toolTip().isEmpty())
                 d["tooltip"] = w->toolTip();
             if (auto l = qobject_cast<QLabel *>(w))
@@ -394,7 +675,7 @@ class Workspace {
             d["shortcut"] = a->shortcut().toString();
         }
         if (qobject_cast<QWidget *>(o))
-            verbs << "image" << "focus" << "pointer" << "wheel" << "key" << "drop";
+            verbs << "image" << "focus" << "pointer" << "wheel" << "key" << "drop" << "transfer";
         if (qobject_cast<QAction *>(o) || qobject_cast<QAbstractButton *>(o))
             verbs << "activate";
         if (qobject_cast<QComboBox *>(o) || qobject_cast<QTabBar *>(o) ||
@@ -402,8 +683,11 @@ class Workspace {
             verbs << "items" << "select";
         if (qobject_cast<QTreeView *>(o))
             verbs << "expand";
+        if (qobject_cast<QMenu *>(o) || qobject_cast<QMenuBar *>(o) ||
+            (qobject_cast<QToolButton *>(o) && qobject_cast<QToolButton *>(o)->menu()))
+            verbs << "menuItems";
         if (qobject_cast<QAbstractItemView *>(o))
-            verbs << "edit";
+            verbs << "edit" << "cell";
         if (qobject_cast<QFileDialog *>(o))
             verbs << "file";
         if (qobject_cast<QDialog *>(o))
@@ -419,7 +703,7 @@ class Workspace {
     static QModelIndex modelIndex(QAbstractItemView *view, const QJsonArray &path, int column = 0) {
         if (!view->model())
             throw Error("Control has no model");
-        QModelIndex index;
+        QModelIndex index = view->rootIndex();
         for (int i = 0; i < path.size(); ++i) {
             index =
                 view->model()->index(path[i].toInt(-1), i + 1 == path.size() ? column : 0, index);
@@ -429,6 +713,7 @@ class Workspace {
         return index;
     }
     MainWindow &window_;
+    QPointer<QWidget> preferred_;
     QVector<QPointer<QObject>> objects_;
     QHash<QObject *, int> ids_;
     Qt::MouseButtons held_;

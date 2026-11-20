@@ -1,4 +1,5 @@
 #pragma once
+#include "app/view_drop.h"
 #include <QApplication>
 #include <QDrag>
 #include <QDragEnterEvent>
@@ -10,11 +11,14 @@
 #include <functional>
 namespace lordly {
 inline constexpr auto poolMime = "application/x-lordly-encounter-pool";
-inline void dragPool(QWidget *source, int pool, int row, const QString &label) {
+inline QMimeData *poolDragData(int pool, int row) {
     auto data = new QMimeData;
     data->setData(poolMime, QByteArray::number(pool) + ":" + QByteArray::number(row));
+    return data;
+}
+inline void dragPool(QWidget *source, int pool, int row, const QString &label) {
     auto drag = new QDrag(source);
-    drag->setMimeData(data);
+    drag->setMimeData(poolDragData(pool, row));
     const auto bounds = source->fontMetrics().boundingRect(QRect(0, 0, 240, 300), Qt::TextWordWrap, label);
     QPixmap image(256, qMax(40, bounds.height() + 16)); image.fill(source->palette().color(QPalette::Highlight));
     QPainter painter(&image); painter.setFont(source->font());
@@ -27,19 +31,34 @@ class PoolTiles : public QListWidget {
   public:
     PoolTiles() { setDragEnabled(true); }
   protected:
+    QMimeData *mimeData(const QList<QListWidgetItem *> &items) const override {
+        if (items.size() != 1)
+            return nullptr;
+        return poolDragData(items.front()->data(Qt::UserRole).toInt(), -1);
+    }
     void startDrag(Qt::DropActions) override {
         if (currentItem()) dragPool(this, currentItem()->data(Qt::UserRole).toInt(), -1, currentItem()->text());
     }
 };
-class TerrainAssignments : public QTableWidget {
+class TerrainAssignments : public DroppableView<QTableWidget> {
   public:
     std::function<void(int, int, int)> assign;
-    TerrainAssignments() : QTableWidget(32, 3) {
+    TerrainAssignments() : DroppableView<QTableWidget>(32, 3) {
         setDragEnabled(true); setAcceptDrops(true); setDragDropMode(QAbstractItemView::DragDrop);
         setDropIndicatorShown(false); setSortingEnabled(false);
         setEditTriggers(QAbstractItemView::NoEditTriggers);
     }
+
   protected:
+    QMimeData *mimeData(const QList<QTableWidgetItem *> &items) const override {
+        if (items.size() != 1 || items.front()->column() != 2)
+            return nullptr;
+        const auto item = items.front();
+        const int pool = item->data(Qt::UserRole).toInt();
+        if (!pool)
+            return nullptr;
+        return poolDragData(pool, item->row());
+    }
     void startDrag(Qt::DropActions) override {
         auto cell = currentItem();
         if (cell && cell->column() == 2 && cell->data(Qt::UserRole).toInt())

@@ -1,4 +1,5 @@
 #include "app/consumable_tree_dialog.h"
+#include "app/view_drop.h"
 #include "engine/consumable_tree.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -53,7 +54,7 @@ class EffectDragData final : public QMimeData {
     const QPersistentModelIndex source;
 };
 
-class EffectTreeView final : public QTreeWidget {
+class EffectTreeView final : public DroppableView<QTreeWidget> {
   public:
     explicit EffectTreeView(MoveConsumableEffect moved) : move_(std::move(moved)) {
         setDragDropMode(QAbstractItemView::DragDrop);

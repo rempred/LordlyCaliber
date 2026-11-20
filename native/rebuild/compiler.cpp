@@ -807,7 +807,7 @@ class BuildReporter {
 };
 }
 BuildResult rebuild(const Project &input, const QString &toolsRoot, const QString &directory,
-                    const BuildProgressCallback &progress, QJsonArray *moduleInventory) {
+                    const BuildProgressCallback &progress, QJsonArray *moduleInventory, QJsonArray *stepInventory) {
     BuildResult result{input.rom().bytes(), {}};
     BuildReporter reporter(progress, result.report);
     reporter.stage(0, "Preparing project");
@@ -1863,7 +1863,7 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         return ranges;
     });
     addUserPatches(exportPlan, p.codePatches(), compiler, directory, result.report);
-    result.image = exportPlan.run();
+    result.image = exportPlan.run(stepInventory);
     compiler.verifyProjectModules(result.report);
     result.report << QString("Checked write ownership across %1 changed export steps").arg(exportPlan.changedSteps());
     reporter.stage(6, "Verifying ROM");

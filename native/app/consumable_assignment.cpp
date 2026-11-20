@@ -58,7 +58,13 @@ bool assignConsumableUse(QWidget *parent, Project &project, int item) {
     effect.setObjectName("assignmentEffect");
     animation.setObjectName("assignmentAnimation");
     const bool editable = ConsumableTree::supported(item);
-    effect.addItem(editable ? "Keep current effects and conditions" : "Use original game behavior");
+    QString keep = editable ? "Keep current effects and conditions" : "Use original game behavior";
+    if (editable && project.consumableEffects()) {
+        auto summary = fixedConsumableDescription(project.consumableEffects()->tree(item));
+        if (!summary.isEmpty())
+            keep = "Keep current · " + summary.replace('\n', ' ');
+    }
+    effect.addItem(keep);
     const auto actions = ConsumableTree::actions();
     if (editable) {
         for (const auto &type :

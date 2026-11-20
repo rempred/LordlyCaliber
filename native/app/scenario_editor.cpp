@@ -122,6 +122,7 @@ ScenarioEditor::ScenarioEditor(Project *project, QUndoStack *undo, std::function
     auto detail = new QVBoxLayout(details_);
     detail->setContentsMargins(0, 0, 0, 0);
     auto pages = new QStackedWidget;
+    pages->setProperty("navigationBar", QVariant::fromValue<QObject *>(navigation));
     pages->setObjectName("scenarioPages");
     detail->addWidget(pages, 1);
     connect(navigation, &QTabBar::currentChanged, pages, &QStackedWidget::setCurrentIndex);

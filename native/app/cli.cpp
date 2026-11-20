@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -41,6 +42,8 @@ int main(int argc, char **argv) {
          {{"o", "output"}, "Export destination. Omit to inspect only.", "path"},
          {"report", "Write inspection/build results as JSON.", "path"},
          {"capabilities", "List structured editor operations and desktop workspace access."},
+         {"guide", "Read the packaged CLI guide without a ROM."},
+         {"settings-dir", "Use private INI preferences for this desktop workspace.", "folder"},
          {"commands", "Execute an ordered JSON array of editor operations (use - for stdin).",
           "path"},
          {"save-project", "Save the resulting native project folder or .lcproject archive.",
@@ -66,8 +69,8 @@ int main(int argc, char **argv) {
         return 2;
     }
     const bool help = parser.isSet("help") || parser.isSet("help-all");
-    if (help ||
-        (!parser.isSet("rom") && !parser.isSet("version") && !parser.isSet("capabilities"))) {
+    if (help || (!parser.isSet("rom") && !parser.isSet("version") &&
+                 !parser.isSet("capabilities") && !parser.isSet("guide"))) {
         QTextStream(stdout) << parser.helpText();
         return help ? 0 : 2;
     }
@@ -81,13 +84,37 @@ int main(int argc, char **argv) {
                    QJsonObject{{"protocol", 1},
                                {"operations", lordly::agentCapabilities()},
                                {"page", "Pass page with start and limit to page an array result"},
-                               {"workspace", "controls, inspect, items, select, edit, activate, "
-                                             "set, expand, focus, key, pointer, wheel, drop, "
-                                             "clipboard, file, reject, image, navigate, save"}})
+                               {"guide", "--guide"},
+                               {"workspace",
+                                "windows, useWindow, pages, openPage, controls, inspect, items, "
+                                "menuItems, cell, "
+                                "select, edit, activate, "
+                                "set, expand, focus, key, pointer, wheel, drop, "
+                                "transfer, clipboard, file, reject, image, navigate, save"}})
                    .toJson();
         return 0;
     }
     try {
+        if (parser.isSet("settings-dir")) {
+            if (!workspace)
+                throw lordly::Error("--settings-dir applies to a desktop workspace");
+            const auto path = parser.value("settings-dir");
+            if (path.isEmpty() || !QDir().mkpath(path))
+                throw lordly::Error("Cannot create workspace settings folder");
+            QSettings::setDefaultFormat(QSettings::IniFormat);
+            QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                               QFileInfo(path).absoluteFilePath());
+        }
+        if (parser.isSet("guide")) {
+            const QDir root(parser.value("library").isEmpty()
+                                ? QCoreApplication::applicationDirPath()
+                                : parser.value("library"));
+            QFile guide(root.filePath("reference/agent-cli.md"));
+            if (!guide.open(QIODevice::ReadOnly))
+                throw lordly::Error("Missing packaged reference/agent-cli.md");
+            QTextStream(stdout) << QString::fromUtf8(guide.readAll());
+            return 0;
+        }
         const auto sourcePath = QFileInfo(parser.value("rom")).canonicalFilePath();
         auto samePath = [](const QString &a, const QString &b) {
             QFileInfo first(a), second(b);
@@ -251,11 +278,14 @@ int main(int argc, char **argv) {
                 report["buildDirectory"] = build.path();
                 QTextStream(stderr) << "Build directory: " << build.path() << Qt::endl;
             }
-            QJsonArray modules;
+            QJsonArray modules, steps;
             auto result = lordly::rebuild(project, toolRoot, build.path(), {},
-                                          parser.isSet("build-plan") ? &modules : nullptr);
-            if (parser.isSet("build-plan"))
+                                          parser.isSet("build-plan") ? &modules : nullptr,
+                                          parser.isSet("build-plan") ? &steps : nullptr);
+            if (parser.isSet("build-plan")) {
                 report["modules"] = modules;
+                report["steps"] = steps;
+            }
             if (parser.isSet("output")) {
                 lordly::exportRom(project, result, parser.value("output"));
                 report["output"] = parser.value("output");

@@ -86,7 +86,8 @@ struct BuildResult {
     QStringList report;
 };
 BuildResult rebuild(const Project &project, const QString &toolsRoot, const QString &workDirectory,
-                    const BuildProgressCallback &progress = {}, QJsonArray *moduleInventory = nullptr);
+                    const BuildProgressCallback &progress = {}, QJsonArray *moduleInventory = nullptr,
+                    QJsonArray *stepInventory = nullptr);
 void exportRom(const Project &project, const BuildResult &build, const QString &path,
                const BuildProgressCallback &progress = {});
 } // namespace lordly

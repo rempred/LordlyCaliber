@@ -4,6 +4,8 @@ Use the portable editor and your own game ROM. The CLI runs locally. Its structu
 
 ## Discover and edit
 
+Run `LordlyCaliber-cli --guide` to read this guide in a terminal, including before opening a ROM. The install includes the [game-code reference](agent-game-code.md) and a [runnable C and assembly example](agent-patch-example.py). With a ROM open, the `read` command accepts their paths under `reference/`. Search the supplied documentation by gameplay terms with `{"op":"lookup","query":"actor identity"}`. Each hit gives its file, line and passage. Search matches all supplied words within the same passage.
+
 Run `LordlyCaliber-cli --capabilities` to list operations. Pass `--commands` a UTF-8 JSON file containing an array, or use `--commands -` to read the array from standard input. The result at each index in `results` belongs to the command at the same index. Add `"page":{"start":0,"limit":20}` to a list command to receive its total and one page. A failed command identifies its index and exits before writing a project or ROM.
 
 Here is a PowerShell example that sets two classes' base strength to 300, keeps all other fields, saves a sharing archive and exports the ROM. Set `$rom` to your own input path.
@@ -60,6 +62,30 @@ Assembly source is an instruction body assembled with the bundled big-endian MIP
 Keep the project archive to retain editable source. The exported game contains the linked instructions. A desktop preview that implements a behavior separately can still differ from a custom game function. Use the exported game's relevant path to verify behavior.
 
 ## Operate the desktop workspace
+
+Begin with `{"op":"pages"}`. Each entry has a path of tab titles. Use the exact array with `{"op":"openPage","path":["Campaign","Scenarios","Settings"]}`. A save, selected record, or advanced view can enable additional pages. Repeat `pages` after opening a document or changing modes. `controls` discovers the active tools and dialogs. Session IDs can change after an edit rebuilds a view. Resolve the control again if its ID expires.
+
+For an independent set of desktop preferences, add `--settings-dir <folder>` to `--workspace`. For technical cutscene tabs, open **Stage → Playback details…**, enable **Show technical tabs**, and close the details dialog. In Scenarios, **Orders → Advanced routes and conditions** reveals the route pages. In Save Editor, load a save to enable the army, character, equipment, consumable and game-state pages.
+
+| Workspace | How to find and verify an edit |
+| --- | --- |
+| Classes and Items | Use `fields` and `records` for bulk values. In the desktop table, `items` returns column headers and `cell` reports the raw value, whether it can be edited, and its viewport coordinates. Use `edit` with the returned row path and column. Inspect the same record after opening the exported ROM. |
+| Attacks | Select an attack in `attackList` and inspect its calculation, power, targeting and class-action controls. Use control IDs to distinguish repeated fields. Reopen the exported ROM and select the same attack. |
+| Consumables | Select an item before opening its effect and animation dialog. For conditional trees, `items` accepts a parent row path. Use `cell` for child count and drop coordinates. Read back the assignment by reopening the dialog on the exported ROM. |
+| Campaign | Navigate by full tab path through World Map, Scenarios or Storyline. Discover the selected scenario, shop, event, scene or map object before changing its controls. The flowchart and stage controls also accept pointer and keyboard events. |
+| Art and Animation | Open the required icon, portrait, sprite, pose or animation page. Use `image` for a preview, `pointer` for painting and `file` for import or export. A cell's `viewport`, `x` and `y` identify the target for a click or drop. |
+| Tools | Settings are grouped into tabs. `inspect` on a spin box returns its value and bounds. Reopen the same Tools page on the exported ROM to check the installed setting. |
+| Save Editor | Open a user battery save, or create one with `mission.seed`. Select a slot and page, make the edit, and use **Export edited save**. Reopen the resulting save against its ROM to read the value back. Project Save and ROM Export each operate on a separate document. |
+| Testing | `missions` lists choices in the input ROM. `{"op":"mission.seed","choice":0}` returns the same seeder's battery bytes in `base64`. Decode to a new `.sra` file. To use a saved army, supply its base64 bytes as `army` and optionally a zero-based `slot`. For current project edits, export first and pass that ROM to both commands. The desktop Testing page also offers its Project64 installation and launch controls when a user has Project64. |
+| Art Library | Create a named asset or use **Copy to Art Library** in an artwork editor. Save the project to keep its editable frames and layers. Assign the asset to a game resource to see its artwork in an exported ROM. |
+
+For an internal drag, get the source view ID from `inspect`, get the destination coordinates with `cell`, then send `{"op":"transfer","from":12,"index":[0],"id":18,"x":60,"y":40,"action":"move"}`. Here 12 is the source view, and 18 is the destination viewport. The source supplies the real MIME data and the target's own drop handler decides whether to accept it.
+
+For multi-file import, pass `paths` as an array of filenames to an open multi-file chooser. A single-file chooser accepts `path`. To identify a frame or inspect an icon-only row, pass `"decoration":true` to `cell` to receive its thumbnail as a base64 PNG if present.
+
+The consumable domain's version 1 holds retail effect settings. When authoring a conditional `trees` entry through `domain.set`, use version 2 or preserve the higher version already returned by the project. The assignment dialog and tree editor handle this automatically.
+
+`set` commits a text or number field as a completed desktop edit. Use `"readBack":true` to receive the control's resulting value, or `"commit":false` for an intermediate draft. For example, scenario day length accepts 25-point increments. Entering 117 produces 125. A table selection can add a row with `"extend":true` when the view supports multiple selections. Use `menuItems` on a menu bar, open menu or menu button to discover its actions. For a separate modeless window, `windows` lists visible window IDs and `useWindow` selects one. An open modal dialog or popup owns the next interaction until it closes.
 
 Run `LordlyCaliber-cli --rom <rom> --project <project> --workspace -`. The project argument is optional. The process opens its own offscreen editor, emits one ready message and accepts one JSON object per line. Each command returns a JSON reply. Its dialogs, previews and Undo stack belong to this session. Close stdin to end it. Use `--workspace commands.jsonl` for a repeatable file of commands.
 

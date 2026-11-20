@@ -64,8 +64,20 @@ $toolDest = New-Item -ItemType Directory -Path (Join-Path $Destination 'n64-tool
 foreach ($pin in $pins.tools.PSObject.Properties) { Copy-Item -LiteralPath (Join-Path $N64Tools $pin.Name) -Destination $toolDest }
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'game') -Destination $Destination -Recurse -Force
 $reference = New-Item -ItemType Directory -Path (Join-Path $Destination 'reference') -Force
-foreach ($name in @('agent-cli.md','features.md','architecture.md','export-contracts.md','decomp-intake.md','accepted-c-20261120.tsv')) {
+foreach ($name in @('agent-cli.md','agent-game-code.md','agent-patch-example.py','features.md','architecture.md','export-contracts.md','decomp-intake.md','accepted-c-20261120.tsv')) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot "docs/$name") -Destination $reference
+}
+foreach ($name in @('battlefield-maps','class-category-icons','dialogue-runtime','scenario-events','scenario-resources','scene-authoring','terrain-route-preview','world-resources')) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "docs/$name.md") -Destination $reference
+}
+# Ship the implementation behind the controls, data formats and patch builders.
+# The release can then explain its behavior even when a user has only the ZIP.
+$editorSources = Join-Path $reference 'editor'
+foreach ($folder in @('engine','rebuild','app')) {
+    $target = New-Item -ItemType Directory -Path (Join-Path $editorSources $folder) -Force
+    Get-ChildItem -LiteralPath (Join-Path $sourceRoot $folder) -File |
+        Where-Object { $_.Extension -in '.cpp','.h','.inc','.cmake' } |
+        Copy-Item -Destination $target
 }
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'licenses') -Destination $Destination -Recurse -Force
 Copy-Item -LiteralPath (Join-Path (Split-Path $sourceRoot) 'LICENSE') -Destination (Join-Path $Destination 'licenses\LordlyCaliber.txt')

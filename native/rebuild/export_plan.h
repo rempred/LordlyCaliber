@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/rom_writer.h"
 #include <QStringList>
+#include <QJsonArray>
 #include <QVector>
 #include <functional>
 
@@ -22,7 +23,7 @@ class ExportPlan {
     // Derived fields are recalculated by the finalizer, not feature-owned data.
     void derived(Ranges ranges);
     void validate() const;
-    QByteArray run();
+    QByteArray run(QJsonArray *inventory = nullptr);
     const QByteArray &image() const { return image_; }
     int changedSteps() const { return changedSteps_; }
     static Ranges changedRanges(const QByteArray &before, const QByteArray &after);

@@ -1,5 +1,6 @@
 #include "rebuild/export_plan.h"
 #include "engine/rom.h"
+#include <QJsonObject>
 #include <QMap>
 #include <QSet>
 
@@ -54,7 +55,7 @@ void ExportPlan::validate() const {
 ExportPlan::Ranges ExportPlan::changedRanges(const QByteArray &before, const QByteArray &after) {
     return RomWriter::changedRanges(before,after);
 }
-QByteArray ExportPlan::run() {
+QByteArray ExportPlan::run(QJsonArray *inventory) {
     validate();
     RomWriter writer(original_);
     writer.derived(derived_);
@@ -67,6 +68,23 @@ QByteArray ExportPlan::run() {
                 writer.allow(rule.later,rule.earlier,rule.ranges(writer.bytes()));
             const auto changes=writer.changes().size();
             writer.edit(step.name,step.prepare,step.owners);
+            if (inventory) {
+                auto describe = [](const Ranges &ranges) {
+                    QJsonArray rows;
+                    for (const auto &range : ranges)
+                        rows.append(QJsonObject{{"offset", range.begin},
+                                                {"size", range.end - range.begin}});
+                    return rows;
+                };
+                inventory->append(
+                    QJsonObject{{"name", step.name},
+                                {"restoration", step.restoration},
+                                {"requires", QJsonArray::fromStringList(step.prerequisites)},
+                                {"declaredRanges", describe(step.owners)},
+                                {"writtenRanges", writer.changes().size() > changes
+                                                      ? describe(writer.changes().last().ranges)
+                                                      : QJsonArray{}}});
+            }
             if(!step.restoration && writer.changes().size()!=changes) ++changedSteps_;
         }
         image_=writer.bytes();

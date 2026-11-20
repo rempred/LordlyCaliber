@@ -3,6 +3,7 @@
 #include "engine/archive.h"
 #include "engine/consumable_visual.h"
 #include "engine/project_references.h"
+#include "engine/scenario_seeder.h"
 #include "rebuild/compiler.h"
 #include <QBuffer>
 #include <QDirIterator>
@@ -71,6 +72,14 @@ const QMap<QString, Domain> domains = {
     {"personalNames",
      {[](Project &p) { return p.personalNames().json(); }, &Project::setPersonalNames}}};
 const QMap<QString, QString> operations = {
+    {"lookup", "query words; search shipped reference passages and the per-function intake table. "
+               "Returns the file, line and matching text."},
+    {"symbol", "name; exact matched function, its source, original owned ranges and symbol "
+               "bindings, and other accepted sources that reference it."},
+    {"missions",
+     "list testable mission choices in the input ROM. Export first to test project edits."},
+    {"mission.seed", "choice from missions, optional army (base64 battery save) and slot "
+                     "(zero-based). Returns a prepared battery save as binary."},
     {"domains", "list editable project domains"},
     {"uses", "kind, id and optional key; find references through the editor and return navigable "
              "locations"},
@@ -96,7 +105,10 @@ const QMap<QString, QString> operations = {
     {"changes", "human-readable project changes"},
     {"files", "optional query substring in packaged game sources, metadata and reference docs; "
               "optional content substring"},
-    {"read", "path from files; returns UTF-8 or base64 bytes"},
+    {"read", "path from files or a region assembly path; optional one-based line and count for "
+             "text excerpts"},
+    {"find", "path and literal query; return matching line numbers and text from packaged source, "
+             "documents or reconstructed assembly"},
     {"owners", "optional query for a function name, path or linked symbol; returns code and data "
                "placements, headers and bindings"},
     {"regions", "optional query, kind or containing offset. Lists physical US Rev 0 ranges across "
@@ -297,6 +309,84 @@ QJsonValue execute(Project &p, const QJsonObject &o, const QDir &root, const QSt
                    bool &edited) {
     const auto op = required(o, "op"), query = o["query"].toString();
     QJsonArray result;
+    if (op == "lookup") {
+        const auto terms = required(o, "query").simplified().split(' ', Qt::SkipEmptyParts);
+        if (terms.isEmpty())
+            throw Error("Supply a search term");
+        const QDir references(root.filePath("reference"));
+        if (!references.exists())
+            throw Error("Missing portable reference library");
+        for (const auto &file : references.entryList({"*.md", "*.tsv"}, QDir::Files, QDir::Name)) {
+            const auto path = "reference/" + file;
+            auto lines = QString::fromUtf8(fileBytes(packageFile(root, path))).split('\n');
+            for (int i = 0; i < lines.size(); ++i) {
+                const auto first = i;
+                QString passage = lines.at(i).trimmed();
+                if (passage.isEmpty())
+                    continue;
+                if (file.endsWith(".md") && !passage.startsWith('|') && !passage.startsWith('#'))
+                    while (i + 1 < lines.size() && !lines.at(i + 1).trimmed().isEmpty() &&
+                           !lines.at(i + 1).startsWith('|') && !lines.at(i + 1).startsWith('#'))
+                        passage += " " + lines.at(++i).trimmed();
+                if (!std::all_of(terms.cbegin(), terms.cend(), [&](const auto &term) {
+                        return passage.contains(term, Qt::CaseInsensitive);
+                    }))
+                    continue;
+                QJsonObject hit{{"path", path}, {"line", first + 1}, {"text", passage}};
+                if (file.endsWith(".tsv") && first)
+                    hit["symbol"] = passage.section('\t', 0, 0);
+                result.append(hit);
+            }
+        }
+        return result;
+    }
+    if (op == "symbol") {
+        const auto name = required(o, "name");
+        QJsonObject owner;
+        QJsonArray references;
+        for (const auto &v : catalog(root)) {
+            const auto row = v.toObject();
+            if (row["targets"].toArray().contains(name))
+                owner = row;
+            const auto bindings = row["bindings"].toObject();
+            if (bindings.contains(name))
+                references.append(QJsonObject{{"source", row["source"]},
+                                              {"targets", row["targets"]},
+                                              {"linkedAddress", bindings[name]}});
+        }
+        if (owner.isEmpty() && references.isEmpty())
+            throw Error("Unknown game symbol: " + name);
+        return QJsonObject{{"name", name}, {"owner", owner}, {"referencedBy", references}};
+    }
+    if (op == "missions" || op == "mission.seed") {
+        if (p.runtimeRom().revision())
+            throw Error("Mission seeding requires US Rev 0");
+        const ScenarioSeeder seeder(p.runtimeRom());
+        if (op == "missions") {
+            for (const auto &choice : seeder.choices())
+                result.append(QJsonObject{{"choice", result.size()},
+                                          {"mission", choice.mission},
+                                          {"location", choice.location},
+                                          {"event", choice.route.event},
+                                          {"node", choice.route.node}});
+            return result;
+        }
+        const auto choice = integer(o["choice"], "choice");
+        if (choice < 0 || choice >= seeder.choices().size())
+            throw Error("Unknown mission choice");
+        std::optional<SaveDocument> donor;
+        if (o.contains("army")) {
+            const auto bytes = QByteArray::fromBase64(required(o, "army").toLatin1(),
+                                                      QByteArray::AbortOnBase64DecodingErrors);
+            donor = SaveDocument::open(seeder.rom(), bytes, p.records(Table::Classes).size());
+            if (!donor->battery())
+                throw Error("Supply a battery save for a donor army");
+            if (o.contains("slot"))
+                donor->selectSlot(int(integer(o["slot"], "slot")));
+        } else if (o.contains("slot"))
+            throw Error("slot requires a donor army");
+        return binary(seeder.seed(int(choice), donor ? &*donor : nullptr));
+    }
     if (op == "region" || op == "regions")
         return regionQuery(p, root, o);
     if (op == "domains")
@@ -479,17 +569,42 @@ QJsonValue execute(Project &p, const QJsonObject &o, const QDir &root, const QSt
     }
     if (op == "changes")
         return p.changeReport().text();
-    if (op == "files" || op == "read") {
-        if (op == "read") {
+    if (op == "files" || op == "read" || op == "find") {
+        if (op != "files") {
             const auto path = required(o, "path");
-            if (path.startsWith("asm/original/rev0/"))
-                return regionQuery(p, root, {{"op", "region"}, {"name", path}})
-                    .toObject()["source"];
-            auto data = fileBytes(packageFile(root, path));
-            const auto text = QString::fromUtf8(data);
-            if (!data.contains('\0') && text.toUtf8() == data)
-                return text;
-            return binary(data);
+            QString content;
+            if (path.startsWith("asm/original/rev0/")) {
+                content = regionQuery(p, root, {{"op", "region"}, {"name", path}})
+                              .toObject()["source"]
+                              .toString();
+            } else {
+                const auto data = fileBytes(packageFile(root, path));
+                content = QString::fromUtf8(data);
+                if (data.contains('\0') || content.toUtf8() != data) {
+                    if (op == "find" || o.contains("line") || o.contains("count"))
+                        throw Error("Text search and line ranges require a text file");
+                    return binary(data);
+                }
+            }
+            if (op == "find") {
+                const auto term = required(o, "query");
+                const auto lines = content.split('\n');
+                for (int i = 0; i < lines.size(); ++i)
+                    if (lines[i].contains(term, Qt::CaseInsensitive))
+                        result.append(QJsonObject{{"line", i + 1}, {"text", lines[i]}});
+                return result;
+            }
+            if (!o.contains("line") && !o.contains("count"))
+                return content;
+            const auto line = o.contains("line") ? integer(o["line"], "line") : 1;
+            const auto count = o.contains("count") ? integer(o["count"], "count") : 40;
+            const auto lines = content.split('\n');
+            if (line < 1 || line > lines.size() || count < 1 || count > 4096)
+                throw Error("Invalid text line range");
+            return QJsonObject{{"path", path},
+                               {"line", line},
+                               {"totalLines", lines.size()},
+                               {"text", lines.mid(line - 1, count).join('\n')}};
         }
         for (const auto folder : {QString("game"), QString("reference")}) {
             QDirIterator it(root.filePath(folder), QDir::Files, QDirIterator::Subdirectories);

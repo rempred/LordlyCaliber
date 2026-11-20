@@ -1,6 +1,7 @@
 #include "app/actor_pose_editor.h"
 #include "app/animation_sequence_editor.h"
 #include "app/combat_animation_replace.h"
+#include "app/view_drop.h"
 #include "engine/sprite_sources.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -13,6 +14,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPainter>
 #include <QPushButton>
 #include <QScopedValueRollback>
@@ -114,12 +116,43 @@ class FrameDelegate final : public QStyledItemDelegate {
         editor->setGeometry(option.rect.adjusted(4, option.rect.height() - 29, -4, -2));
     }
 };
-class FrameBoard final : public QListWidget {
+class FrameBoard final : public DroppableView<QListWidget> {
   public:
-    using QListWidget::QListWidget;
+    using DroppableView<QListWidget>::DroppableView;
     std::function<void(int, int)> move;
 
   protected:
+    QMimeData *mimeData(const QList<QListWidgetItem *> &items) const override {
+        auto mime = QListWidget::mimeData(items);
+        if (mime && items.size() == 1)
+            mime->setProperty("frameIndex", QVariant::fromValue(QPersistentModelIndex(
+                                                indexFromItem(items.first()))));
+        return mime;
+    }
+    bool acceptsFrame(const QDropEvent *event) const {
+        const auto source =
+            event->mimeData()->property("frameIndex").value<QPersistentModelIndex>();
+        return source.isValid() && source.model() == model() &&
+               (event->possibleActions() & Qt::MoveAction);
+    }
+    void dragEnterEvent(QDragEnterEvent *event) override {
+        if (!acceptsFrame(event)) {
+            event->ignore();
+            return;
+        }
+        QListWidget::dragEnterEvent(event);
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+    }
+    void dragMoveEvent(QDragMoveEvent *event) override {
+        if (!acceptsFrame(event)) {
+            event->ignore();
+            return;
+        }
+        QListWidget::dragMoveEvent(event);
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+    }
     void startDrag(Qt::DropActions) override {
         if (selectedItems().size() != 1)
             return;
@@ -131,11 +164,12 @@ class FrameBoard final : public QListWidget {
         drag.exec(Qt::MoveAction);
     }
     void dropEvent(QDropEvent *event) override {
-        if (event->source() != this || selectedItems().size() != 1) {
+        if (!acceptsFrame(event)) {
             event->ignore();
             return;
         }
-        const int from = row(selectedItems().first());
+        const int from =
+            event->mimeData()->property("frameIndex").value<QPersistentModelIndex>().row();
         auto target = itemAt(event->position().toPoint());
         int insertion = target ? row(target) : count();
         if (target && event->position().x() > visualItemRect(target).center().x())
