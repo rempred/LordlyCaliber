@@ -2,9 +2,28 @@
 
 Use the portable editor and your own game ROM. The CLI runs locally. Its structured commands and the desktop share the project model, compiler and ROM export checks. An independent desktop session gives agents access to dialogs, preview controls, file imports, drawing tools, Undo and Save. A running graphical editor can open the resulting project folder or sharing archive.
 
-## Discover and edit
+## Give your agent a task
 
-In the desktop editor, open **Tools → Agents** to find this installation’s CLI, the loaded ROM and the saved project path. Choose a prompt, edit the task in your own words, then copy the prompt with its connection information. Save pending desktop edits first. An agent can open the saved project, write a new sharing archive, and give that archive back to you. **Open agent project…** loads the result.
+Open **Tools → Agents** and copy the **CLI path**. It points to `LordlyCaliber-cli.exe` beside the editor in the extracted Windows ZIP. For a new installation, use the [Lordly Caliber downloads](https://github.com/rempred/LordlyCaliber/releases).
+
+Give your agent the CLI path and the path to your source ROM. To continue an existing project, save it first and include the path to its project folder or `.lcproject` archive. The agent works in its own editor session. You can start a request with this sentence.
+
+> Use the Lordly Caliber CLI at [CLI path] with my ROM at [ROM path] and my project at [project path]. Read the shipped guide with `--guide`. Save your edits as a new .lcproject and tell me where to open it.
+
+### Example prompts
+
+- **Inspect a project.** “List the edits and code patches in my saved project. Which edits still match, and what does each enabled patch change?”
+- **Edit several classes.** “Increase the base strength of Knight and Berserker by 10 each. Show the old and new values, then reopen the exported ROM and check both classes.”
+- **Assign a healing effect.** “Make Heal Leaf restore 47 HP and give it the Revive Stone animation. Reopen the exported ROM and check the amount and all four animation frames.”
+- **Edit a story decision.** “Find the Wentinus choice between following orders and making peace. Show me the two outcomes in game order. Change the wording of the peace choice to ‘Seek a truce’ and keep its original outcome.”
+- **Create artwork.** “Import my shield PNG into the Art Library, assign it to the equipment item I specify, and export a preview of the icon as it appears in the rebuilt ROM.”
+- **Write a C patch.** “Make Heal Leaf restore half the target’s missing HP, rounded down and capped at 60. Check both the menu prediction and the actual heal. Save the editable C source in the project.”
+- **Work with assembly.** “Walk me through the shipped actor-identity example. Build the assembly predicate and its C caller together, show which instructions changed, and save a project where I can toggle each patch.”
+- **Check an export.** “Start a fresh project from my source ROM, export it with zero edits, and compare the files byte for byte. Report their SHA-256 hashes.”
+
+Open the returned archive with **File → Open project…**. **Tools → Agents** shows its recorded edits and **Project code patches** opens the editable patch source.
+
+## Discover and edit
 
 The same tab and **File → Review project changes…** show CLI activity saved in the project folder or sharing archive. Use `{"op":"agent.edits"}` to read it as JSON and `{"op":"changes"}` for the changelog. It records effective project changes, including bulk field edits, source patch changes, and edits made in the CLI desktop workspace. Reads and repeat saves create no entries. Individual fields and patches have their own status. Compound edits compare the saved section as a whole. A later edit can replace or revert a recorded value. An older project can still list its custom patches even when it has no attribution history. To retain source and activity, save the project as well as exporting the game.
 

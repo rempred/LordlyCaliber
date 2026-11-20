@@ -181,7 +181,6 @@ int main(int argc, char **argv) {
                 project.applyManifest(manifest);
             else
                 project.importLegacy(manifest);
-            project.setProjectPath(QFileInfo(parser.value("project")).absoluteFilePath());
         }
         if (workspace) {
             if (!project.rom().revision()) {

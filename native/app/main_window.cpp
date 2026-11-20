@@ -1281,7 +1281,6 @@ bool MainWindow::openProjectFile(const QString &path) {
     else
         next.importLegacy(object);
     auto warnings = next.importWarnings();
-    next.setProjectPath(QFileInfo(path).absoluteFilePath());
     installProject(std::move(next));
     projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
     if (sourcePolicy == Project::SourcePolicy::ImportIntoCurrentRom) {
@@ -1335,7 +1334,6 @@ bool MainWindow::saveProjectTo(QString path, bool archive) {
             saved.saveArchive(path);
         else
             saved.saveFolder(path);
-        project_->setProjectPath(QFileInfo(path).absoluteFilePath());
         if (recorded) {
             project_->setAgentActivity(recorded->agentActivity());
             *agentBaseline_ = *project_;

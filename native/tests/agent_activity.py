@@ -2,6 +2,7 @@
 import argparse
 import base64
 import json
+import subprocess
 import time
 from pathlib import Path
 
@@ -70,14 +71,17 @@ def check_changelog(ui, work):
 def workspace_history(client, folder, updated):
     with client.workspace("--project", folder) as ui:
         ui.page("Tools", "Agents")
-        assert Path(ui.field("agentsCliPath")["text"]).resolve() == client.cli
-        assert Path(ui.field("agentsProjectPath")["text"]).resolve() == folder
-        ui.call("select", name="agentsPromptExample", text="Create a code patch")
-        ui.call("activate", name="agentsCopyPrompt")
-        prompt = ui.call("clipboard")
-        assert all(str(s) in prompt for s in (client.cli, client.rom, folder, "Heal Leaf"))
+        ui.call("focus", name="agentsCliPath")
+        ui.call("key", name="agentsCliPath", key="Ctrl+A")
+        ui.call("key", name="agentsCliPath", key="Ctrl+C")
+        copied_cli = Path(ui.call("clipboard"))
+        assert copied_cli == client.cli and copied_cli.is_file()
+        guide = subprocess.run([str(copied_cli), "--guide"], check=True, capture_output=True,
+                               encoding="utf8", cwd=client.work, env=client.env, timeout=30).stdout
         ui.call("activate", name="agentsReadGuide")
-        assert "guide" in ui.call("controls")["window"].lower()
+        displayed = ui.field("agentsGuideText")["text"]
+        for example in ("Knight and Berserker", "Wentinus", "assembly predicate", "byte for byte"):
+            assert example in displayed and example in guide, example
         ui.call("reject")
         assert ui.call("items", name="agentsEdits")["count"] == 3
         check_changelog(ui, client.work)
@@ -147,5 +151,5 @@ if __name__ == "__main__":
     manifest = command_history(client, client.work / "First agent edits.lcproject", folder)
     workspace_history(client, folder, client.work / "Workspace edits.lcproject")
     later_changes(client, folder, manifest)
-    print("Verified prompts, saved changelog, patch source, Undo/Redo, repeated saves, "
+    print("Verified copying the CLI path, desktop and terminal examples, saved changelog, patch source, Undo/Redo, repeated saves, "
           "legacy history and both project formats.")

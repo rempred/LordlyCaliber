@@ -2,15 +2,12 @@
 #include "app/main_window.h"
 #include "engine/agent_activity.h"
 #include <QAction>
-#include <QApplication>
-#include <QClipboard>
-#include <QComboBox>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
-#include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
@@ -25,21 +22,11 @@
 #include <QVBoxLayout>
 namespace lordly {
 namespace {
-QString executable() {
-    return QDir::toNativeSeparators(
-        QDir(QCoreApplication::applicationDirPath()).filePath("LordlyCaliber-cli.exe"));
-}
-QString quote(QString value) {
-    return "'" + value.replace("'", "''") + "'";
-}
-QString guide() {
-    return QDir(QCoreApplication::applicationDirPath()).filePath("reference/agent-cli.md");
-}
-QLineEdit *pathField(const char *name) {
-    auto field = new QLineEdit;
-    field->setObjectName(name);
-    field->setReadOnly(true);
-    return field;
+QPushButton *addButton(QHBoxLayout *row, const QString &title, const char *name) {
+    auto button = new QPushButton(title);
+    button->setObjectName(name);
+    row->addWidget(button);
+    return button;
 }
 } // namespace
 AgentsPage::AgentsPage(Project *p, QUndoStack *undo, QWidget *parent)
@@ -54,108 +41,51 @@ AgentsPage::AgentsPage(Project *p, QUndoStack *undo, QWidget *parent)
     auto layout = new QVBoxLayout(body);
     scroll->setWidget(body);
     outer->addWidget(scroll);
-    auto intro =
-        new QLabel("Lordly Caliber’s command-line interface (CLI) lets an agent edit your project, "
-                   "inspect game assets and matching code, and build ROMs with custom C or "
-                   "assembly patches. It runs locally using files you choose.");
-    intro->setWordWrap(true);
-    layout->addWidget(intro);
-    auto upper = new QHBoxLayout;
-    layout->addLayout(upper);
-    auto group = new QGroupBox("Connect an agent");
-    auto left = new QVBoxLayout(group);
-    auto form = new QFormLayout;
-    auto cli = pathField("agentsCliPath");
-    cli->setText(executable());
-    rom_ = pathField("agentsRomPath");
-    projectPath_ = pathField("agentsProjectPath");
-    form->addRow("CLI executable", cli);
-    form->addRow("Source ROM", rom_);
-    form->addRow("Saved project", projectPath_);
-    left->addLayout(form);
-    status_ = new QLabel;
-    status_->setObjectName("agentsConnectionStatus");
-    status_->setWordWrap(true);
-    left->addWidget(status_);
-    auto buttons = new QHBoxLayout;
-    left->addLayout(buttons);
-    auto addButton = [](QHBoxLayout *row, const QString &title, const char *name) {
-        auto button = new QPushButton(title);
-        button->setObjectName(name);
-        row->addWidget(button);
-        return button;
-    };
-    connect(addButton(buttons, "Copy connection", "agentsCopyConnection"), &QPushButton::clicked,
-            this, [this] { QApplication::clipboard()->setText(connection()); });
-    auto projectButtons = new QHBoxLayout;
-    left->addLayout(projectButtons);
-    connect(addButton(projectButtons, "Save project…", "agentsSaveProject"), &QPushButton::clicked,
-            this, [this] {
-                if (auto action = window()->findChild<QAction *>("saveSharingArchive"))
-                    action->trigger();
-            });
-    connect(addButton(projectButtons, "Open agent project…", "agentsOpenProject"),
-            &QPushButton::clicked, this, [this] {
-                if (auto action = window()->findChild<QAction *>("openSavedProject"))
-                    action->trigger();
-            });
-    connect(addButton(buttons, "Read CLI guide", "agentsReadGuide"), &QPushButton::clicked, this,
-            [this] {
-                QDialog dialog(this);
-                dialog.setWindowTitle("Portable CLI guide");
-                dialog.resize(840, 620);
-                auto layout = new QVBoxLayout(&dialog);
-                auto text = new QTextBrowser;
-                layout->addWidget(text);
-                if (QFileInfo::exists(guide()))
-                    text->setSource(QUrl::fromLocalFile(guide()), QTextDocument::MarkdownResource);
-                else
-                    text->setPlainText("The guide is missing. Place the release’s reference folder "
-                                       "beside the editor executable.");
-                text->setSearchPaths({QFileInfo(guide()).absolutePath()});
-                auto close = new QDialogButtonBox(QDialogButtonBox::Close);
-                layout->addWidget(close);
-                connect(close, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-                dialog.exec();
-            });
-    left->addStretch();
-    upper->addWidget(group, 1);
-    auto prompt = new QGroupBox("Prompt your agent");
-    auto right = new QVBoxLayout(prompt);
-    auto examples = new QComboBox;
-    examples->setObjectName("agentsPromptExample");
-    examples->addItem("Edit game data",
-                      "Set the base strength of the Knight class to 300. Show me the original "
-                      "value, save the edited project and verify the exported ROM.");
-    examples->addItem("Create a code patch",
-                      "Make Heal Leaf restore half of the target’s missing HP, capped at 60. Trace "
-                      "the game’s prediction and application code. Keep the C or assembly patch "
-                      "editable in the project and verify the result.");
-    examples->addItem("Inspect a project",
-                      "List the agent edits and code patches saved in this project. Explain which "
-                      "values still match and identify the game features they affect.");
-    right->addWidget(examples);
-    task_ = new QPlainTextEdit;
-    task_->setObjectName("agentsPromptTask");
-    task_->setPlainText(examples->currentData().toString());
-    task_->setAccessibleName("Task for your agent");
-    task_->setMaximumHeight(105);
-    right->addWidget(task_);
-    connect(examples, &QComboBox::currentIndexChanged, this,
-            [this, examples] { task_->setPlainText(examples->currentData().toString()); });
-    auto copy = new QPushButton("Copy prompt with connection");
-    copy->setObjectName("agentsCopyPrompt");
-    right->addWidget(copy, 0, Qt::AlignLeft);
-    connect(copy, &QPushButton::clicked, this, [this] {
-        QApplication::clipboard()->setText(connection() + "\n\n" + task_->toPlainText().trimmed());
+    auto connection = new QHBoxLayout;
+    layout->addLayout(connection);
+    auto label = new QLabel("CLI path");
+    connection->addWidget(label);
+    const QDir installation(QCoreApplication::applicationDirPath());
+    const auto path = QDir::toNativeSeparators(installation.filePath("LordlyCaliber-cli.exe"));
+    auto cli = new QLineEdit;
+    cli->setObjectName("agentsCliPath");
+    cli->setReadOnly(true);
+    cli->setAccessibleName(label->text());
+    cli->setToolTip(path);
+    if (QFileInfo(path).isFile()) {
+        cli->setText(path);
+        cli->setCursorPosition(0);
+    } else {
+        cli->setPlaceholderText("CLI missing. Extract the full Windows ZIP to this folder.");
+    }
+    label->setBuddy(cli);
+    connection->addWidget(cli, 1);
+    auto guide = addButton(connection, "CLI guide and examples", "agentsReadGuide");
+    const auto guidePath = installation.filePath("reference/agent-cli.md");
+    connect(guide, &QPushButton::clicked, this, [this, guidePath] {
+        QDialog dialog(this);
+        dialog.setWindowTitle("CLI guide and examples");
+        dialog.resize(840, 620);
+        auto contents = new QVBoxLayout(&dialog);
+        auto text = new QTextBrowser;
+        text->setObjectName("agentsGuideText");
+        text->setOpenExternalLinks(true);
+        contents->addWidget(text);
+        if (QFileInfo::exists(guidePath))
+            text->setSource(QUrl::fromLocalFile(guidePath), QTextDocument::MarkdownResource);
+        else
+            text->setPlainText("The CLI guide is missing. Extract the reference folder beside "
+                               "the editor executable.");
+        auto close = new QDialogButtonBox(QDialogButtonBox::Close);
+        contents->addWidget(close);
+        connect(close, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        dialog.exec();
     });
-    upper->addWidget(prompt, 1);
     auto activity = new QGroupBox("CLI edits in this project");
     layout->addWidget(activity, 1);
     auto history = new QVBoxLayout(activity);
-    auto help = new QLabel("Saved CLI batches and workspace edits appear here and in the project "
-                           "changelog. Status compares individual record fields and code patches, "
-                           "or the whole saved section for compound edits.");
+    auto help = new QLabel("Status shows whether an edit still matches the project. For artwork "
+                           "and other compound edits, it compares the whole section.");
     help->setWordWrap(true);
     history->addWidget(help);
     edits_ = new QTreeWidget;
@@ -197,40 +127,9 @@ AgentsPage::AgentsPage(Project *p, QUndoStack *undo, QWidget *parent)
             refresh();
     });
 }
-QString AgentsPage::connection() const {
-    QStringList lines{"Use the local Lordly Caliber CLI at " + executable(),
-                      "Read its shipped guide in PowerShell with & " + quote(executable()) +
-                          " --guide",
-                      "Discover commands with & " + quote(executable()) + " --capabilities",
-                      "Source ROM: " + QDir::toNativeSeparators(project_->rom().sourcePath())};
-    if (!project_->projectPath().isEmpty())
-        lines << "Input project: " + QDir::toNativeSeparators(project_->projectPath());
-    if (!undo_->isClean())
-        lines << "The editor has unsaved changes. Use the newly saved project for these edits.";
-    if (project_->projectPath().isEmpty())
-        lines << "There is no saved project path yet. Use the ROM for a new project, or supply a "
-                 "saved project to continue editor work.";
-    lines << "Use the source ROM as input. Save edits and editable patch source to a new project "
-             "and export the test ROM to a separate file.";
-    return lines.join('\n');
-}
 void AgentsPage::refresh() {
     if (!project_)
         return;
-    rom_->setText(QDir::toNativeSeparators(project_->rom().sourcePath()));
-    projectPath_->setText(QDir::toNativeSeparators(project_->projectPath()));
-    for (auto field : {rom_, projectPath_}) {
-        field->setCursorPosition(0);
-        field->setToolTip(field->text());
-    }
-    projectPath_->setPlaceholderText("No saved project selected");
-    status_->setText(!QFileInfo::exists(executable())
-                         ? "The portable CLI is missing beside the editor executable."
-                     : !undo_->isClean()
-                         ? "Save your project to give the agent your current edits. Open the "
-                           "agent’s saved result to review its changes."
-                         : "The agent starts a separate local process. Open its saved project here "
-                           "to review the result.");
     edits_->clear();
     auto main = qobject_cast<MainWindow *>(window());
     std::optional<Project> pending;
