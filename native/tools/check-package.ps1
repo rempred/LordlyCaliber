@@ -39,6 +39,14 @@ try {
         throw 'Packaged Qt application did not report the expected version.'
     }
     & (Join-Path $PSScriptRoot 'check-windows-file-info.ps1') -Directory $Package -Version $packageVersion
+    $workspaceCommands = Join-Path $runDirectory 'workspace.jsonl'
+    [IO.File]::WriteAllText($workspaceCommands, '{"op":"items","name":"workspaceNavigation"}')
+    $messages = & (Join-Path $Package 'LordlyCaliber-cli.exe') --rom $RomPath --workspace $workspaceCommands
+    if ($LASTEXITCODE -ne 0 -or $messages.Count -ne 2 -or
+        !(($messages[0] | ConvertFrom-Json).ready) -or
+        !(($messages[1] | ConvertFrom-Json).result.items -contains 'Consumables')) {
+        throw 'Packaged headless workspace could not open the editor.'
+    }
     if ((Get-Content -LiteralPath (Join-Path $Package 'README.md') -TotalCount 1) -ne "# Lordly Caliber $packageVersion") {
         throw 'Packaged README version differs from the executable.'
     }

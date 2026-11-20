@@ -9,6 +9,7 @@
 #include "app/army_editor.h"
 #include "app/art_editor.h"
 #include "app/attack_editor.h"
+#include <QAction>
 #include <QTabBar>
 #include <QScrollArea>
 #include "app/project_review_dialog.h"
@@ -63,6 +64,10 @@ void MainWindow::navigateTo(const EditLocation &location) {
         };
         QWidget *destination = nullptr;
         const auto &kind = location.editor;
+        if (kind == "Code patches") {
+            if (auto action = findChild<QAction *>("showProjectCodePatches")) action->trigger();
+            return;
+        }
         int id = location.id;
         if (kind == "classes" || kind == "items" || kind == "consumables") {
             clear(kind + "Search");

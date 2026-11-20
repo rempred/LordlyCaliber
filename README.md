@@ -7,6 +7,7 @@ story events, sprites and combat animations.
 
 **[Download the latest Windows release](https://github.com/rempred/LordlyCaliber/releases/latest)**
 · [User guide](native/README.md)
+· [Agent CLI and custom code patches](native/docs/agent-cli.md)
 · [Release notes](https://github.com/rempred/LordlyCaliber/releases)
 · [Report a bug](https://github.com/rempred/LordlyCaliber/issues)
 · [How to contribute](CONTRIBUTING.md)

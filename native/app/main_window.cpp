@@ -16,6 +16,7 @@
 #include "app/army_editor.h"
 #include "app/art_editor.h"
 #include "app/change_report_dialog.h"
+#include "app/code_patch_dialog.h"
 #include "app/project_review_dialog.h"
 #include "app/combat_editor.h"
 #include "app/combat_animation_editor.h"
@@ -187,6 +188,9 @@ MainWindow::MainWindow(QWidget *parent)
     });
     open->setShortcut(QKeySequence::Open);
     file->addAction("Open &project…", this, &MainWindow::openProject);
+    file->addAction("Project code patches…", this, [this] {
+        if (project_) showCodePatches(this,*project_,*undo_);
+    })->setObjectName("showProjectCodePatches");
     auto save = file->addAction("Save project &folder…", this, [this] { saveProject(false); });
     save->setShortcut(QKeySequence::Save);
     file->addAction("Save sharing &archive…", this, [this] { saveProject(true); });
@@ -1281,24 +1285,27 @@ bool MainWindow::openProjectFile(const QString &path) {
     return true;
 }
 void MainWindow::saveProject(bool archive) {
+    saveProjectTo({}, archive);
+}
+bool MainWindow::saveProjectTo(QString path, bool archive) {
     if (loading_)
-        return;
+        return false;
     if (!project_) {
         report("Open a ROM first.");
-        return;
+        return false;
     }
     if (auto focus = focusWidget()) focus->clearFocus();
     if (!resolvePendingEdits(workspaces_, "saving the project",
-                             [this](const EditLocation &where) { navigateTo(where); })) return;
+                             [this](const EditLocation &where) { navigateTo(where); })) return false;
     if (invalidEdits()) {
         report("Correct invalid text input before saving.");
-        return;
+        return false;
     }
-    auto path = archive ? QFileDialog::getSaveFileName(this, "Save sharing archive", {},
+    if (path.isEmpty()) path = archive ? QFileDialog::getSaveFileName(this, "Save sharing archive", {},
                                                        "Lordly project (*.lcproject)")
                         : QFileDialog::getExistingDirectory(this, "Choose project folder");
     if (path.isEmpty())
-        return;
+        return false;
     try {
         if (archive)
             project_->saveArchive(path);
@@ -1308,8 +1315,10 @@ void MainWindow::saveProject(bool archive) {
         projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
         clearRecovery();
         statusBar()->showMessage("Project saved", 5000);
+        return true;
     } catch (const std::exception &e) {
         report(QString::fromUtf8(e.what()));
+        return false;
     }
 }
 bool MainWindow::prepareBuild(const QString &action) {

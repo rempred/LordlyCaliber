@@ -127,6 +127,17 @@ ChangeReport Project::changeReport(const Project *reference) const {
         if (!details.isEmpty())
             report.entries << ProjectChange{area, title, details, location};
     };
+    const auto previousPatches = reference ? reference->codePatches() : QJsonArray{};
+    if (codePatches() != previousPatches) {
+        QStringList details;
+        for (const auto &v : codePatches()) {
+            const auto patch = v.toObject();
+            details << QString("%1 (%2, %3)").arg(patch["id"].toString(), patch["language"].toString(),
+                patch["enabled"].toBool(true) ? "enabled" : "disabled");
+        }
+        if (details.isEmpty()) details << "All custom code patches removed";
+        add("Code patches", "Project-owned game code", details);
+    }
     auto className = [&](int id) {
         return id >= 0 && id < records(Table::Classes).size()
                    ? QString("%1 (class %2)").arg(record(Table::Classes, id).name).arg(id)

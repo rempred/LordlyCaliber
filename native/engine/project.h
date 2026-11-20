@@ -86,6 +86,8 @@ class Project {
     ChangeReport changeReport(const Project *reference = nullptr) const;
     ChangeReport compareWithRom(Rom reference) const;
     QJsonObject manifest() const;
+    QJsonArray codePatches() const { return retained_["codePatches"].toArray(); }
+    void setCodePatches(const QJsonArray &patches);
     void applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy = SourcePolicy::RequireMatch);
     void importLegacy(const QJsonObject &object);
     const SpriteLibrary &sprites() const { return sprites_; }

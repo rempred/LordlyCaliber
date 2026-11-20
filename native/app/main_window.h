@@ -21,6 +21,8 @@ class MainWindow : public QMainWindow {
     ~MainWindow() override;
     void loadRom(const QString &path);
     bool openProjectFile(const QString &path);
+    void installProject(Project project);
+    bool saveProjectTo(QString path, bool archive);
     void navigateTo(const EditLocation &);
     bool openRecoveryFile(const QString &path, const QString &sourceRom);
 
@@ -29,7 +31,6 @@ class MainWindow : public QMainWindow {
     bool eventFilter(QObject *, QEvent *) override;
 
   private:
-    void installProject(Project project);
     void addRecordWorkspace(Table table, const QString &title);
     bool confirmDiscard();
     void openProject();

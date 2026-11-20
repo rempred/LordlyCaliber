@@ -9,6 +9,7 @@
 #include "engine/deleted_content.h"
 #include "rebuild/goth_runtime.h"
 #include "rebuild/accepted_rom.h"
+#include "rebuild/user_patches.h"
 #include "rebuild/persuasion.h"
 #include "rebuild/weapon_status.h"
 #include "rebuild/weapon_types.h"
@@ -240,9 +241,15 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
     } else {
         run("cc1.exe", flags, directory);
         step(2);
+        if (name.startsWith("lc_user_")) {
+            const auto listing = QString::fromLatin1(readFile(assembly));
+            const QRegularExpression external("\\.(?:include|incbin|macro|irp|irpc|altmacro|mri|rept|appfile|list)(?:\\s|$)", QRegularExpression::CaseInsensitiveOption);
+            if (external.match(listing).hasMatch() || listing.contains("#APP"))
+                throw Error("Use an assembly patch for handwritten instructions. File-reading assembler directives are unsupported.");
+        }
         run("mips-kmc-elf-as.exe", assemble, directory);
         step(3);
-        if (!fixedLayout.isEmpty()) {
+        if (!fixedLayout.isEmpty() || name.startsWith("lc_user_")) {
             auto bytes = readFile(object);
             // Original functions may begin at any word; keep their exact instructions.
             put32(bytes, elfSectionHeader(bytes, ".text") + 32, 4);
@@ -355,11 +362,60 @@ CompiledOwner Compiler::compileQualifiedOwner(const QJsonObject &owner, const QS
     }
     return result;
 }
+void Compiler::setProjectModules(const QJsonArray &patches) {
+    for(const auto &v:patches) {
+        const auto patch=v.toObject();
+        if(!patch.contains("module") || !patch["enabled"].toBool(true)) continue;
+        const auto name=patch["module"].toString();
+        if(projectModules_.contains(name)) throw Error("Two enabled patches replace build module "+name);
+        projectModules_[name]=patch;
+    }
+}
+void Compiler::verifyProjectModules(QStringList &report) const {
+    for(const auto &name:projectModules_.keys()) {
+        if(!builtProjectModules_.contains(name))
+            throw Error("Enabled patch requires a build module unused by this project: "+name);
+        report << "Recompiled project source patch "+projectModules_[name]["id"].toString()+" for "+name;
+    }
+}
 CompiledModule Compiler::compileModule(const QByteArray &source, const QString &directory,
                                        const QString &name, quint32 address,
                                        const QMap<QString, QByteArray> &headers,
                                        const QMap<QString, quint32> &symbols,
                                        bool inlineReadOnlyData) const {
+    const auto recordModule = [&](const CompiledModule &built, const QJsonObject &patch = {}) {
+        if (!moduleInventory_) return;
+        QJsonObject bindings;
+        for(auto it=symbols.cbegin();it!=symbols.cend();++it) bindings[it.key()]=qint64(it.value());
+        QJsonObject entries;
+        for(auto it=built.entries.cbegin();it!=built.entries.cend();++it) entries[it.key()]=qint64(it.value());
+        const auto effective=patch.isEmpty()?source:patch["source"].toString().toUtf8();
+        QJsonObject row{{"name",name},{"address",qint64(address)},{"size",built.bytes.size()},
+            {"sourceSha256",QString::fromLatin1(sha256(effective))},{"source",QString::fromUtf8(effective)},
+            {"originalSourceSha256",QString::fromLatin1(sha256(source))},{"entries",entries},
+            {"headers",QJsonArray::fromStringList(headers.keys())},{"bindings",bindings}};
+        if(!patch.isEmpty()) row["patchId"]=patch["id"];
+        moduleInventory_->append(row);
+    };
+    if (projectModules_.contains(name)) {
+        const auto &patch=projectModules_[name];
+        if (sha256(source)!=patch["expectedSourceSha256"].toString().toLower().toLatin1())
+            throw Error("Game source for module " + name + " differs from the patch baseline");
+        validateModuleSource(patch["source"].toString(),headers);
+        // Use the same placement, headers and bindings as the ordinary feature.
+        // A missing exported entry must fail here before a caller can emit a jump to zero.
+        Compiler baseline(*this);
+        baseline.projectModules_.clear();
+        baseline.moduleInventory_=nullptr;
+        const auto original=baseline.compileModule(source,directory,name,address,headers,symbols,inlineReadOnlyData);
+        const auto replacement=baseline.compileModule(patch["source"].toString().toUtf8(),directory,
+            "lc_user_"+patch["id"].toString(),address,headers,symbols,inlineReadOnlyData);
+        for (const auto &entry:original.entries.keys())
+            if (!replacement.entries.contains(entry)) throw Error("Code patch removed module entry "+entry);
+        builtProjectModules_.insert(name);
+        recordModule(replacement,patch);
+        return replacement;
+    }
     CompiledModule result{
         compile(source, directory, name, address, ".text", headers, symbols, inlineReadOnlyData), address, {}};
     const auto elf = readFile(QDir(directory).filePath(name + ".elf"));
@@ -435,6 +491,7 @@ CompiledModule Compiler::compileModule(const QByteArray &source, const QString &
     if (inlineReadOnlyData) result.functionExtent = quint32(result.bytes.size());
     result.addressReferences =
         readMipsAddressReferences(readFile(QDir(directory).filePath(name + ".o")), result, symbols);
+    recordModule(result);
     return result;
 }
 QByteArray CompiledModule::fitOwner(qsizetype size) const {
@@ -750,7 +807,7 @@ class BuildReporter {
 };
 }
 BuildResult rebuild(const Project &input, const QString &toolsRoot, const QString &directory,
-                    const BuildProgressCallback &progress) {
+                    const BuildProgressCallback &progress, QJsonArray *moduleInventory) {
     BuildResult result{input.rom().bytes(), {}};
     BuildReporter reporter(progress, result.report);
     reporter.stage(0, "Preparing project");
@@ -760,6 +817,8 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         reporter.activity(text, completed, total);
     });
     compiler.authenticate();
+    compiler.collectModuleInventory(moduleInventory);
+    compiler.setProjectModules(p.codePatches());
     ExportPlan exportPlan(p.rom().bytes());
     exportPlan.restore("remove-weapon-types", [&](QByteArray &image) {
         image=removeWeaponTypes(Rom::fromBytes(image),compiler,directory);
@@ -1803,7 +1862,9 @@ BuildResult rebuild(const Project &input, const QString &toolsRoot, const QStrin
         }
         return ranges;
     });
+    addUserPatches(exportPlan, p.codePatches(), compiler, directory, result.report);
     result.image = exportPlan.run();
+    compiler.verifyProjectModules(result.report);
     result.report << QString("Checked write ownership across %1 changed export steps").arg(exportPlan.changedSteps());
     reporter.stage(6, "Verifying ROM");
     reporter.activity("Updating checksum and reopening the rebuilt ROM");

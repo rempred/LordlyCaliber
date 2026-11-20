@@ -43,6 +43,9 @@ try {
     & (Join-Path $qtRoot 'bin\windeployqt.exe') --release --no-compiler-runtime --no-translations --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --no-quick-import --skip-plugin-types generic,networkinformation,tls,qmltooling --dir $Destination (Join-Path $Destination 'LordlyCaliber.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed.' }
 } finally { $env:PATH = $priorPath }
+# windeployqt includes the Windows desktop plugin. The CLI workspace also needs
+# the offscreen plugin on machines without a Qt development installation.
+Copy-Item -LiteralPath (Join-Path $qtRoot 'plugins/platforms/qoffscreen.dll') -Destination (Join-Path $Destination 'platforms')
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vsRoot = & $vswhere -latest -products '*' -property installationPath
 $redist = $null
@@ -60,9 +63,14 @@ Get-ChildItem -LiteralPath $redist -File -Filter '*.dll' | Copy-Item -Destinatio
 $toolDest = New-Item -ItemType Directory -Path (Join-Path $Destination 'n64-toolchain') -Force
 foreach ($pin in $pins.tools.PSObject.Properties) { Copy-Item -LiteralPath (Join-Path $N64Tools $pin.Name) -Destination $toolDest }
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'game') -Destination $Destination -Recurse -Force
+$reference = New-Item -ItemType Directory -Path (Join-Path $Destination 'reference') -Force
+foreach ($name in @('agent-cli.md','features.md','architecture.md','export-contracts.md','decomp-intake.md','accepted-c-20261120.tsv')) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "docs/$name") -Destination $reference
+}
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'licenses') -Destination $Destination -Recurse -Force
 Copy-Item -LiteralPath (Join-Path (Split-Path $sourceRoot) 'LICENSE') -Destination (Join-Path $Destination 'licenses\LordlyCaliber.txt')
 $readme = Get-Content -LiteralPath (Join-Path $sourceRoot 'README.md') -Raw
+$readme = $readme.Replace('(docs/agent-cli.md)', '(reference/agent-cli.md)')
 $readme = $readme -replace '\A# Lordly Caliber[^\r\n]*', "# Lordly Caliber $packageVersion"
 [IO.File]::WriteAllText((Join-Path $Destination 'README.md'), $readme, [Text.UTF8Encoding]::new($false))
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'THIRD-PARTY.md') -Destination $Destination

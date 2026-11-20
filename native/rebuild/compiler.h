@@ -49,6 +49,9 @@ class Compiler {
                                  const QMap<QString, quint32> &symbols = {},
                                  bool inlineReadOnlyData = false) const;
     void authenticate() const;
+    void setProjectModules(const QJsonArray &patches);
+    void verifyProjectModules(QStringList &report) const;
+    void collectModuleInventory(QJsonArray *target) { moduleInventory_ = target; }
     // Compile authenticated original C at its exact game address; cached output
     // must still pass the original owner checks.
     // Small, separately bounded mod hooks may then be applied by the caller.
@@ -74,13 +77,16 @@ class Compiler {
     QString root_;
     std::function<void(const QString &, int, int)> activity_;
     mutable CompilationCache cache_;
+    QMap<QString,QJsonObject> projectModules_;
+    mutable QSet<QString> builtProjectModules_;
+    QJsonArray *moduleInventory_ = nullptr;
 };
 struct BuildResult {
     QByteArray image;
     QStringList report;
 };
 BuildResult rebuild(const Project &project, const QString &toolsRoot, const QString &workDirectory,
-                    const BuildProgressCallback &progress = {});
+                    const BuildProgressCallback &progress = {}, QJsonArray *moduleInventory = nullptr);
 void exportRom(const Project &project, const BuildResult &build, const QString &path,
                const BuildProgressCallback &progress = {});
 } // namespace lordly

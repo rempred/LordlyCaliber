@@ -1,5 +1,6 @@
 #include "engine/cursor_boundary.h"
 #include "engine/project.h"
+#include "rebuild/user_patches.h"
 #include "engine/rom_writer.h"
 #include "engine/movement_runtime.h"
 #include "engine/new_campaign.h"
@@ -374,6 +375,7 @@ void Project::replaceBytes(Table t, int row, const QByteArray &bytes) {
 int Project::changedRecords() const {
     int count =
         int(classNames_.size() + addedClasses_.size() + itemNames_.size() + addedItems_.size()) + int(personalNames_.has_value()) + int(replacedClassAssets_.size()) + (deletedContent_!=readDeletedContent(rom_));
+    count += int(codePatches().size());
     if (originalItems_ && weaponTypes_.names() != originalItems_->weaponTypes().names()) ++count;
     if (!rom_.revision() && movementTypes_.modified()) ++count;
     if (attacks_ && attacks_->modified()) ++count;
@@ -1515,7 +1517,13 @@ void Project::setDialogues(const QJsonObject &value) {
     loadDialogues();
     dialogues_->apply(value);
 }
+void Project::setCodePatches(const QJsonArray &patches) {
+    validateUserPatches(patches);
+    if (patches.isEmpty()) retained_.remove("codePatches");
+    else retained_["codePatches"] = patches;
+}
 void Project::applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy) {
+    if (object.contains("codePatches")) validateUserPatches(object["codePatches"]);
     if (object.value("format") != "LordlyCaliberProject" || object.value("version").toInt() != 1)
         throw Error("Unsupported native project format");
     const auto sourceHash = object.value("sourceSha256").toString().toLatin1().toLower();

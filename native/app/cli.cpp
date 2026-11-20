@@ -1,6 +1,9 @@
+#include "app/agent_commands.h"
+#include "app/agent_workspace.h"
 #include "engine/director.h"
 #include "engine/project.h"
 #include "rebuild/compiler.h"
+#include <QApplication>
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDir>
@@ -12,9 +15,21 @@
 #include <QTextStream>
 
 int main(int argc, char **argv) {
-    QCoreApplication app(argc, argv);
-    app.setApplicationName("LordlyCaliber-cli");
-    app.setApplicationVersion(LORDLY_VERSION);
+    bool workspace = false;
+    for (int i = 1; i < argc; ++i)
+        workspace |=
+            QByteArray(argv[i]) == "--workspace" || QByteArray(argv[i]).startsWith("--workspace=");
+    std::unique_ptr<QCoreApplication> app;
+    if (workspace) {
+        if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        app = std::make_unique<QApplication>(argc, argv);
+    } else
+        app = std::make_unique<QCoreApplication>(argc, argv);
+    app->setApplicationName("LordlyCaliber-cli");
+    app->setApplicationVersion(LORDLY_VERSION);
+    app->setOrganizationName("LordlyCaliber");
     QCommandLineParser parser;
     parser.setApplicationDescription(
         "Inspect or rebuild an Ogre Battle 64 project without the desktop UI.");
@@ -25,22 +40,51 @@ int main(int argc, char **argv) {
          {{"p", "project"}, "Project manifest, folder or archive to apply.", "path"},
          {{"o", "output"}, "Export destination. Omit to inspect only.", "path"},
          {"report", "Write inspection/build results as JSON.", "path"},
+         {"capabilities", "List structured editor operations and desktop workspace access."},
+         {"commands", "Execute an ordered JSON array of editor operations (use - for stdin).",
+          "path"},
+         {"save-project", "Save the resulting native project folder or .lcproject archive.",
+          "path"},
+         {"library", "Directory containing packaged game and reference folders.", "path"},
+         {"build-plan", "Run the export checks and report active source modules, addresses, "
+                        "bindings and source."},
+         {"build-dir",
+          "Keep compiler inputs, listings, objects, linker scripts and linked code in a new "
+          "directory inside this folder.",
+          "folder"},
+         {"workspace",
+          "Open an independent headless desktop session. JSON Lines file or - for interactive "
+          "stdin.",
+          "path"},
          {"directors", "Inspect the ROM's Director resource directory."},
          {"scene", "Inspect commands at a Director z64 payload offset (hex).", "offset"},
          {"tools", "N64 compiler directory. Defaults to the portable bundle.", "path"}});
     // Qt's automatic help/error exit may open a Windows dialog when the
     // executable is run with redirected handles. This entry point is a CLI.
-    if (!parser.parse(app.arguments())) {
+    if (!parser.parse(app->arguments())) {
         QTextStream(stderr) << parser.errorText() << '\n';
         return 2;
     }
     const bool help = parser.isSet("help") || parser.isSet("help-all");
-    if (help || (!parser.isSet("rom") && !parser.isSet("version"))) {
+    if (help ||
+        (!parser.isSet("rom") && !parser.isSet("version") && !parser.isSet("capabilities"))) {
         QTextStream(stdout) << parser.helpText();
         return help ? 0 : 2;
     }
     if (parser.isSet("version")) {
-        QTextStream(stdout) << app.applicationName() << ' ' << app.applicationVersion() << '\n';
+        QTextStream(stdout) << app->applicationName() << ' ' << app->applicationVersion() << '\n';
+        return 0;
+    }
+    if (parser.isSet("capabilities")) {
+        QTextStream(stdout)
+            << QJsonDocument(
+                   QJsonObject{{"protocol", 1},
+                               {"operations", lordly::agentCapabilities()},
+                               {"page", "Pass page with start and limit to page an array result"},
+                               {"workspace", "controls, inspect, items, select, edit, activate, "
+                                             "set, expand, focus, key, pointer, wheel, drop, "
+                                             "clipboard, file, reject, image, navigate, save"}})
+                   .toJson();
         return 0;
     }
     try {
@@ -56,6 +100,32 @@ int main(int argc, char **argv) {
             (samePath(parser.value("report"), sourcePath) ||
              (parser.isSet("output") && samePath(parser.value("report"), parser.value("output")))))
             throw lordly::Error("Choose a report path separate from the source and exported ROM");
+        const auto savePath = parser.value("save-project");
+        const bool archive = savePath.endsWith(".lcproject", Qt::CaseInsensitive);
+        const auto savedFile = archive ? savePath : QDir(savePath).filePath("project.json");
+        QStringList inputs{sourcePath};
+        if (parser.isSet("project")) {
+            const auto path = parser.value("project");
+            inputs << (QFileInfo(path).isDir() ? QDir(path).filePath("project.json") : path);
+        }
+        if (parser.isSet("commands") && parser.value("commands") != "-") {
+            inputs << parser.value("commands");
+            if (parser.isSet("save-project") && samePath(savedFile, parser.value("commands")))
+                throw lordly::Error("Project destination overlaps the command file");
+        }
+        for (const auto &input : inputs)
+            for (const auto &flag : {QString("output"), QString("report")})
+                if (parser.isSet(flag) && samePath(input, parser.value(flag)))
+                    throw lordly::Error("Choose an output or report path separate from the inputs");
+        if (parser.isSet("save-project") &&
+            (savePath.isEmpty() || samePath(savedFile, sourcePath) ||
+             (parser.isSet("output") && samePath(savedFile, parser.value("output"))) ||
+             (parser.isSet("report") && samePath(savedFile, parser.value("report")))))
+            throw lordly::Error("Choose distinct project, report and ROM destinations");
+        if (workspace &&
+            (parser.isSet("output") || parser.isSet("save-project") || parser.isSet("commands") ||
+             parser.isSet("report") || parser.isSet("build-plan") || parser.isSet("build-dir")))
+            throw lordly::Error("Use workspace save and desktop export inside a workspace session");
         QFile catalog(":/catalog.json");
         if (!catalog.open(QIODevice::ReadOnly))
             throw lordly::Error("Missing record catalog");
@@ -75,6 +145,40 @@ int main(int argc, char **argv) {
                 project.applyManifest(manifest);
             else
                 project.importLegacy(manifest);
+        }
+        if (workspace) {
+            if (!project.rom().revision()) {
+                project.loadScenarios();
+                project.loadWorld();
+            }
+            return lordly::runAgentWorkspace(*static_cast<QApplication *>(app.get()),
+                                             std::move(project), parser.value("workspace"));
+        }
+        auto toolRoot = parser.value("tools");
+        if (toolRoot.isEmpty())
+            toolRoot = QDir(QCoreApplication::applicationDirPath()).filePath("n64-toolchain");
+        QJsonArray commandResults;
+        if (parser.isSet("commands")) {
+            const auto path = parser.value("commands");
+            QFile input(path);
+            const bool opened = path == "-" ? input.open(stdin, QIODevice::ReadOnly)
+                                            : input.open(QIODevice::ReadOnly);
+            if (!opened)
+                throw lordly::Error("Cannot read commands: " + input.errorString());
+            QJsonParseError error;
+            const auto doc = QJsonDocument::fromJson(input.readAll(), &error);
+            if (!doc.isArray())
+                throw lordly::Error("Expected a JSON array of commands: " + error.errorString());
+            auto library = parser.value("library");
+            if (library.isEmpty())
+                library = QCoreApplication::applicationDirPath();
+            bool edited = false;
+            commandResults =
+                lordly::runAgentCommands(project, doc.array(), library, toolRoot, edited);
+            if (edited && !parser.isSet("save-project") && !parser.isSet("output") &&
+                !parser.isSet("build-plan") && !parser.isSet("build-dir"))
+                throw lordly::Error("Provide --save-project, --output, or --build-plan to check "
+                                    "the requested edits");
         }
         QJsonObject report{
             {"title", project.rom().title()},
@@ -132,18 +236,41 @@ int main(int argc, char **argv) {
                                               {"commands", commands}};
             }
         }
-        if (parser.isSet("output")) {
-            auto root = parser.value("tools");
-            if (root.isEmpty())
-                root = QDir(QCoreApplication::applicationDirPath()).filePath("n64-toolchain");
-            QTemporaryDir build;
+        if (parser.isSet("output") || parser.isSet("build-plan") || parser.isSet("build-dir")) {
+            auto destination = QDir::tempPath();
+            if (parser.isSet("build-dir")) {
+                destination = QDir(parser.value("build-dir")).absolutePath();
+                if (!QDir().mkpath(destination))
+                    throw lordly::Error("Cannot create build folder");
+            }
+            QTemporaryDir build(QDir(destination).filePath("lordly-build-XXXXXX"));
             if (!build.isValid())
                 throw lordly::Error("Cannot create temporary export directory");
-            auto result = lordly::rebuild(project, root, build.path());
-            lordly::exportRom(project, result, parser.value("output"));
-            report["output"] = parser.value("output");
+            if (parser.isSet("build-dir")) {
+                build.setAutoRemove(false);
+                report["buildDirectory"] = build.path();
+                QTextStream(stderr) << "Build directory: " << build.path() << Qt::endl;
+            }
+            QJsonArray modules;
+            auto result = lordly::rebuild(project, toolRoot, build.path(), {},
+                                          parser.isSet("build-plan") ? &modules : nullptr);
+            if (parser.isSet("build-plan"))
+                report["modules"] = modules;
+            if (parser.isSet("output")) {
+                lordly::exportRom(project, result, parser.value("output"));
+                report["output"] = parser.value("output");
+            }
             report["build"] = QJsonArray::fromStringList(result.report);
         }
+        if (parser.isSet("save-project")) {
+            if (archive)
+                project.saveArchive(savePath);
+            else
+                project.saveFolder(savePath);
+            report["savedProject"] = savePath;
+        }
+        if (parser.isSet("commands"))
+            report["results"] = commandResults;
         auto output = QJsonDocument(report).toJson();
         if (parser.isSet("report"))
             lordly::atomicWrite(parser.value("report"), output);
