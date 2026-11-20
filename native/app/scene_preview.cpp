@@ -1268,6 +1268,7 @@ void ScenePreview::restart() {
     deferredSeekTick_ = -1;
     tick_ = 0;
     preparing_ = false;
+    sceneRam_.clear();
     liveInput_ = {};
     pendingPressed_ = 0;
     frame_ = {};
@@ -1416,8 +1417,7 @@ void ScenePreview::restart() {
         dialogueEnvironment_ = DialoguePlayback::environment(rom_);
         playback.supplyDialogue(SceneResources({1, -1, 0xffff}), SceneDialogue(0));
         playback.dialogue()->context = SceneDialogueContext::preview(std::move(names), inputs ? inputs->textSpeed(512) : 512);
-        // Silent preview has no resident voices and starts on route zero with unity buses.
-        // Preserve typed requests for an eventual backend; never invent voice lifetimes.
+        // A matching capture can replace these defaults when its script takes control.
         playback.supplyAudio(SceneAudio({0, {}, 0, 1}, {32767, 32767, 32767, 32767}));
         if (items_ && itemIcons_)
             playback.panels().setItems(*items_, *itemIcons_);
@@ -1446,35 +1446,15 @@ void ScenePreview::restart() {
                                           "and selected names.");
                     }
                 }
-                // Roster rows belong to this invocation. A battery or a different
-                // scene cannot identify the current unit by its Actor slot.
-                if (ram.size() >= 0x1ce8c0 && (u16(ram, 0x18f1a0) & 0xfff) == selector_) {
-                    const auto scriptAt = ram.size() >= 0x22a95c ? qint64(u32(ram, 0x22a958)) - 0x80000000LL : -1;
+                if (!inputs && ram.size() >= 0x22a95c &&
+                    (u16(ram, 0x18f1a0) & 0xfff) == selector_) {
+                    const qint64 scriptAt = qint64(u32(ram, 0x22a958)) - 0x80000000LL;
                     const auto &source = selectedProgram.source;
-                    if (!inputs && scriptAt >= 0 && !source.isEmpty() && scriptAt + source.size() <= ram.size()
-                        && QByteArrayView(ram).sliced(scriptAt, source.size()) == source) {
-                        playback.audio()->setGainReader([ram](quint32 address) -> std::optional<quint32> {
-                            const qint64 at = qint64(address) - 0x80000000LL;
-                            if (at < 0 || at + 4 > ram.size()) return {};
-                            return u32(ram, at);
-                        });
-                    }
-                    const auto address = u32(ram, 0x1ce8bc);
-                    const qint64 rows = qint64(address) - 0x80000000LL + 0x1c4;
-                    if (address >= 0x80000000U && rows + 20 * 248 <= ram.size()) {
-                        QVector<QByteArray> captured;
-                        for (int i = 0; i < 20; ++i)
-                            captured << ram.mid(rows + i * 248, 248);
-                        playback.actors().supplyBodyRows(captured);
-                        for (int i = 0; i < 100; ++i) {
-                            playback.actors().supplyMemberGender(false, i,
-                                                                 u8(ram, 0x193bd4 + i * 56));
-                            playback.actors().supplyMemberGender(true, i,
-                                                                 u8(ram, 0x195574 + i * 52));
-                        }
+                    if (scriptAt >= 0 && !source.isEmpty() && scriptAt + source.size() <= ram.size() &&
+                        QByteArrayView(ram).sliced(scriptAt, source.size()) == source) {
+                        sceneRam_ = ram;
                         context_->setText(context_->text() +
-                                          "\nActor profiles use the open runtime state's character "
-                                          "and scene rows.");
+                            "\nThe selected scene uses actor and sound data from the open runtime state.");
                     }
                 }
             }
@@ -1489,6 +1469,8 @@ void ScenePreview::restart() {
             playback.loadImagePresentation(row);
         }
         current_.emplace(Snapshot{std::move(playback), {}, {}, {}, false});
+        if (!inherited && !sceneRam_.isEmpty())
+            applySceneRam(*current_);
         if (inputs && !inputs->boundary().isEmpty()) {
             current_->stopped = true; current_->reason = inputs->boundary();
         }
@@ -1516,6 +1498,38 @@ void ScenePreview::restart() {
         present();
         status_->setText(QString::fromUtf8(e.what()));
     }
+}
+void ScenePreview::applySceneRam(Snapshot &next) {
+    const auto &ram = sceneRam_;
+    auto &playback = next.playback;
+    if (u32(ram, 0x22a950) == 0)
+        playback.audio()->useEntryState(ram);
+    playback.audio()->setGainReader([ram](quint32 address) -> std::optional<quint32> {
+        const qint64 at = qint64(address) - 0x80000000LL;
+        if (at < 0 || at + 4 > ram.size()) return {};
+        return u32(ram, at);
+    });
+    const auto address = u32(ram, 0x1ce8bc);
+    const qint64 rows = qint64(address) - 0x80000000LL + 0x1c4;
+    if (address >= 0x80000000u && !(address & 3) && rows + 20 * 248 <= ram.size()) {
+        QVector<QByteArray> captured;
+        for (int i = 0; i < 20; ++i) {
+            const auto row = ram.mid(rows + i * 248, 248);
+            for (int member = 0; member < 3; ++member) {
+                const auto object = u32(row, member * 4);
+                const qint64 at = qint64(object) - 0x80000000LL;
+                if (at >= 0 && !(object & 3) && at + 0x30 <= ram.size())
+                    playback.actors().supplyBodyObject(object, ram.mid(at, 0x30));
+            }
+            captured << row;
+        }
+        playback.actors().supplyBodyRows(captured);
+        for (int i = 0; i < 100; ++i) {
+            playback.actors().supplyMemberGender(false, i, u8(ram, 0x193bd4 + i * 56));
+            playback.actors().supplyMemberGender(true, i, u8(ram, 0x195574 + i * 52));
+        }
+    }
+    next.sceneRamApplied = true;
 }
 int ScenePreview::activeChannels(const Snapshot &next) const {
     if (next.playback.iris())
@@ -1980,6 +1994,9 @@ void ScenePreview::step() {
                         return referenceCommand(next, op, args, &value);
                     }, 10000, 64, [&](quint32 key, int word, quint32 opcode) {
                         if (selector_ < 0 || key != resources_->selectors().value(selector_)) return;
+                        if (!next.sceneRamApplied && !sceneRam_.isEmpty() &&
+                            next.playback.director().selector() == selector_)
+                            applySceneRam(next);
                         if (!observedTimes.contains(word)) observedTimes[word] = preparing_ ? 0 : tick_ + 1;
                         next.activeWord = word;
                         if (opcode == 0x7d) {
@@ -2439,12 +2456,41 @@ void ScenePreview::present() {
         status_->setText(
             status_->text() +
             "\nPanels: native timing and layout; approximate frame and glyph rendering.");
-    if (current_->playback.audio()->requestCount())
+    const auto &audio = *current_->playback.audio();
+    if (audio.requestCount() || audio.hasEntryState()) {
+        int entryVoices = 0;
+        for (const auto count : audio.inputs().voices)
+            entryVoices += int(count);
         status_->setText(
             status_->text() +
-            QString("\nSilent audio preview: %1 native service requests; no resident voices.")
-                .arg(current_->playback.audio()->requestCount()));
-    if (const auto index = current_->playback.audio()->missingGain())
+            QString("\nSilent audio preview. %1 service requests. %2")
+                .arg(audio.requestCount())
+                .arg(audio.hasEntryState()
+                    ? tr("%1 active voices at scene entry.").arg(entryVoices)
+                    : tr("Using preview channel state.")));
+    }
+    if (audio.state().envelope_present && !audio.state().unknown_level)
+        status_->setText(status_->text() + tr("\nVolume envelope %1. %2 updates remaining.")
+            .arg(audio.state().level).arg(audio.state().remaining));
+    for (const auto &request : audio.requests()) {
+        if (request.kind == LORDLY_AUDIO_CONTROL)
+            status_->setText(status_->text() + tr("\nChannel %1 received controller %2.")
+                .arg(request.context).arg(request.value));
+    }
+    if (const auto &request = audio.lastDelivery()) {
+        using D = SceneAudioDelivery;
+        QString detail;
+        switch (request->destination) {
+        case D::Registered: detail=QString("Audio register %1 holds request %2.").arg(request->registerSlot).arg(request->stored); break;
+        case D::Queue: detail=QString("Queued sound %1 from request %2.").arg(request->stored).arg(request->argument); break;
+        case D::DefaultGain: case D::IndexedGain:
+            detail=QString("Gain %1 sent to channel 0x%2.").arg(qint32(request->stored)).arg(request->channel,8,16,QChar('0')); break;
+        case D::Suppressed: detail="Game mode 12 suppressed the null-channel request."; break;
+        case D::Pending: detail=QString("Pending channel request %1.").arg(request->argument); break;
+        }
+        status_->setText(status_->text()+"\n"+detail);
+    }
+    if (const auto index = audio.missingGain())
         status_->setText(status_->text() + QString("\nSound gain %1 uses a starting volume from game memory. "
                                                   "The preview omits that volume.").arg(*index));
 }

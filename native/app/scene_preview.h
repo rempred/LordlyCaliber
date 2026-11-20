@@ -91,6 +91,7 @@ class ScenePreview : public QWidget {
         QImage frame;
         QString reason, backgroundName;
         bool stopped = false, finished = false;
+        bool sceneRamApplied = false;
         SceneSelection selection;
         std::optional<SceneBackgroundRenderer> backgrounds;
         QMap<quint32, SceneBackgroundChannel> backgroundResources;
@@ -122,6 +123,7 @@ class ScenePreview : public QWidget {
     void stop();
     void startPlayback();
     void render(Snapshot &, bool commitDraw);
+    void applySceneRam(Snapshot &);
     bool referenceCommand(Snapshot &, quint32, const QVector<quint32> &, int *value = nullptr);
     void retainBackgrounds(Snapshot &);
     void convertBackgrounds(Snapshot &);
@@ -146,6 +148,7 @@ class ScenePreview : public QWidget {
     StageObjectRenderer objectRenderer_;
     std::optional<Directors> resources_;
     QByteArray originalReportScript_;
+    QByteArray sceneRam_;
     std::optional<Dialogues> dialogues_;
     std::optional<DialogueDrawing> dialogueDrawing_;
     DialogueTextEnvironment dialogueEnvironment_;

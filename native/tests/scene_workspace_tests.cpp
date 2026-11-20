@@ -301,6 +301,47 @@ class SceneWorkspaceTests : public QObject {
         QVERIFY2(status->text().contains("returned to the game") || status->text().contains("Scene released"),
                  qPrintable(status->text()));
     }
+    void paulEntryAudio() {
+        const auto path = qEnvironmentVariable("LORDLY_PAUL_ENTRY_RAM");
+        if (path.isEmpty() || qEnvironmentVariableIsEmpty("LORDLY_TEST_ROM"))
+            QSKIP("Selector 290 scene-entry RAM and its ROM required");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        auto project = Project::fromRom(rom());
+        auto document = SaveDocument::open(project.rom(), file.readAll(), 165);
+        project.loadScenePrograms();
+        project.loadDialogues();
+        const auto &scenes = *project.scenePrograms();
+        const auto key = scenes.original().selectors()[290];
+        const auto &resource = scenes.original().entries()[key];
+        ScenePreview preview(project.rom());
+        preview.setSaveProvider([&] { return &document; });
+        preview.selectScene(scenes, key, SceneImages::backgrounds(project.rom(), resource, -1).mode,
+                            *project.dialogues());
+        preview.show();
+        auto step = preview.findChild<QPushButton *>("sceneStep");
+        auto confirm = preview.findChild<QPushButton *>("panelConfirm");
+        auto status = preview.findChild<QLabel *>("scenePlaybackStatus");
+        QTRY_VERIFY_WITH_TIMEOUT(!preview.property("scenePreparing").toBool(), 15000);
+        bool sawInitial = false, sawFinal = false, sawController = false;
+        for (int n = 0; n < 6000 && !preview.property("sceneStopped").toBool(); ++n) {
+            if (n % 20 == 0 && confirm->isVisible())
+                confirm->click();
+            else
+                step->click();
+            sawInitial |= status->text().contains("Volume envelope 24576. 30 updates remaining.");
+            sawFinal |= status->text().contains("Volume envelope 15036. 0 updates remaining.");
+            sawController |= status->text().contains("Channel 0 received controller 120.");
+        }
+        QVERIFY2(status->text().contains("18 active voices at scene entry."), qPrintable(status->text()));
+        QVERIFY2(sawInitial && sawFinal, qPrintable(status->text()));
+        QVERIFY2(sawController, qPrintable(status->text()));
+        QVERIFY2(status->text().contains("Scene released") ||
+                     status->text().contains("returned to the game"),
+                 qPrintable(status->text()));
+        QVERIFY(!status->text().contains("Sound gain 44"));
+        qInfo().noquote()<<status->text();
+    }
     void storyDecisionHandoff_data() {
         QTest::addColumn<int>("question");
         QTest::addColumn<bool>("second");

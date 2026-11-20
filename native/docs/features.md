@@ -1156,9 +1156,12 @@ assumptions. Automatic Actor portraits now use the recovered lookup with bounds
 checks; unsafe ordinary-Actor resource reads require an explicit portrait. Audible
 playback remains unfinished.
 Scene audio commands now emit native service requests, including deferred program
-replacement, gain envelopes and controller writes. The silent preview preserves
-these requests with deterministic seeking; it assumes no resident voices. The
-resident audio consumer and synthesis remain unfinished.
+replacement, gain envelopes and controller writes. Cutscenes runs the source-built
+gain and request routers. The preview shows the current volume envelope, controller
+commands and the last routed request. A RAM capture at the matching scene's first
+script word supplies its initial channels, active voice count and envelope.
+Fixed preview inputs apply when the scene has no entry capture. Story playback
+is silent while the resident music sequencer and mixer are unimplemented.
 
 Scene images support native vignette construction, scripted pan/zoom, forward
 and reverse trails, and manual direction/zoom controls with animated boundary

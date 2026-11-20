@@ -175,6 +175,7 @@ class ScenePlayback {
         return panels_;
     }
     void supplyAudio(SceneAudio audio) {
+        audio.loadChannelTable(rom_.bytes());
         audio_ = std::move(audio);
     }
     std::optional<SceneAudio> &audio() {

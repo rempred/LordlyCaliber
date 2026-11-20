@@ -467,6 +467,58 @@ class SceneRuntimeTests : public QObject {
         QCOMPARE(int(audio.state().unknown_gain_mask), 0);
         QCOMPARE(audio.state().gains[1], 32767u);
     }
+    void nativeAudioArguments() {
+        using D = SceneAudioDelivery;
+        // Use a deliberately different indexed pointer to distinguish index 0 from the default.
+        QByteArray ram(0x400000, 0);
+        put16(ram, 0x22a994, 9);
+        for (const auto mode : {0, 11, 12, 13}) {
+            put16(ram, 0xe810e, mode);
+            SceneAudio audio({0, {}, 0, 1}, {});
+            audio.useEntryState(ram);
+            for (quint32 request : {0u, 1u, 303u, 0x12340021u, 0x80000001u, 0xffffffffu}) {
+                QVERIFY(audio.service(0x6e, {0, 0, request}));
+                const auto delivery = audio.lastDelivery().value();
+                QCOMPARE(delivery.destination, mode == 12 ? D::Suppressed : D::Queue);
+                QCOMPARE(delivery.channel, 0u);
+                QCOMPARE(delivery.argument, request);
+                QCOMPARE(delivery.stored, mode == 12 ? 0u : request & 0xffffu);
+            }
+        }
+        for (int i = 0; i < 7; ++i)
+            put32(ram, 0x22a8a8 + 4 * i, 0x800eb100u + 0x50u * i);
+        SceneAudio audio({0, {}, 0, 1}, {});
+        audio.useEntryState(ram);
+        for (quint32 index = 0; index < 8; ++index) {
+            for (quint32 gain : {0u, 128u, 0x10000u, 0x7fffffffu, 0x80000000u, 0xffffffffu}) {
+                QVERIFY(audio.service(0x6f, {index, gain}));
+                const auto delivery = audio.lastDelivery().value();
+                QCOMPARE(delivery.destination, index == 7 ? D::DefaultGain : D::IndexedGain);
+                QCOMPARE(delivery.channel, index == 7 ? 0x800eb0b0u : 0x800eb100u + index * 0x50u);
+                QCOMPARE(delivery.argument, gain);
+                QCOMPARE(delivery.stored, gain);
+            }
+        }
+        QVERIFY(audio.service(0x6e, {0, 0, 0xff001234}));
+        QCOMPARE(audio.lastDelivery()->destination, D::Registered);
+        QCOMPARE(audio.lastDelivery()->registerSlot, 1);
+        QCOMPARE(audio.lastDelivery()->stored, 0xff001234u);
+        put32(ram, 0x22a974, 0x80300000);
+        put8(ram, 0x301cb3, 12);
+        put32(ram, 0x22a8c4, 0x80302000);
+        put16(ram, 0x302000, quint16(-3));
+        put16(ram, 0x302002, 6000);
+        put16(ram, 0x302004, 4);
+        put16(ram, 0x302006, 7);
+        audio.useEntryState(ram);
+        QVERIFY(!audio.lastDelivery());
+        QCOMPARE(audio.requestCount(), 0u);
+        QCOMPARE(audio.state().pending[1], 12);
+        QCOMPARE(audio.state().step, -3);
+        QCOMPARE(audio.state().level, 6000);
+        QCOMPARE(audio.state().remaining, 4);
+        QCOMPARE(audio.state().group, 7);
+    }
     void audioRequestsAgainstMips() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
         if (path.isEmpty())

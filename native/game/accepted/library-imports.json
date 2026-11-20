@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "upstream": "OB64 Decomp",
   "evidenceSchemaVersion": 7,
-  "revision": "44d90133adc7ca899aaf73256b275ced490f54f0",
-  "verifiedAt": "2026-11-20T05:04:46.505Z",
+  "revision": "b42789195e6f3235ad8dc5e3c1f63f4503e12688",
+  "verifiedAt": "2026-11-20T15:44:31.739Z",
   "sourceClasses": [
     "PURE_C",
     "HYBRID_C"
   ],
-  "fingerprint": "43DEDF4797BFAA626E546565704AB09A13C5213A39614626DFF7D7DAD10E392E",
-  "verificationSha256": "FC7A2F191FE27377910C5F25E09F91AE278D8B87A34DA805C0923AEFC91E3224",
-  "freshCompilationSha256": "64311F20E6799DBEF1F9BA0AFDC56FB710F130AC0838C420F4D26C1C3E533CDE",
+  "fingerprint": "81B603886B4D4582EF36675878849B082C30EC68DC5CA067A04C72E287C6EB3D",
+  "verificationSha256": "C657254ED566891AD7BE87219ED82C3412EB10C65DDA5B327C1019D88F137494",
+  "freshCompilationSha256": "68E100A87FFADD193D70CF64040178BC76CBA6EA60530BF1C25D2B37401C35DA",
   "purpose": "Complete accepted matching C and hybrid-C source library. ROM and preview manifests qualify active adoption; existing adaptations retain their own baselines.",
   "counts": {
     "owners": 2611,
@@ -1797,7 +1797,7 @@
           "proof": {
             "path": "generated/c/func_0021EBBC.source-object-proof.json",
             "bytes": 19512509,
-            "sha256": "3E3C6EBC20FF5999FA4D1D6BE53A0C718AB85BF136A73B2A1688DB7882D20E4A"
+            "sha256": "613F281A32E3C03084CD616DB8454F4712509E781EAF5006188A0B396E46A98C"
           },
           "textMode": "atomic-contiguous-owner-union",
           "physicalOwners": [
@@ -21840,7 +21840,7 @@
           "proof": {
             "path": "generated/c/func_0001c2b0.source-object-proof.json",
             "bytes": 262135,
-            "sha256": "1BE0C6C8EC81B22D9C1883C76FA24775803636AE1803B03EC5A089BD1427AFF9"
+            "sha256": "6E395E055613545A3B44F73202CC7365F19F1717166AD8642E3CFFEFDDDB9FC7"
           },
           "textMode": "native-text-single-owner-readonly-fragment-projection",
           "physicalOwners": [
@@ -64116,7 +64116,7 @@
     {
       "source": "src/lib/func_00208DC8.c",
       "sourceClass": "PURE_C",
-      "sourceSha256": "4DFEBE4A24202E621AFB04779B90736084EF1D36EE527706DC08BD3E8AB3FE99",
+      "sourceSha256": "D9127600F1D3F9EDA2BEE13BDBDF46ED78E50679CAB594AF6A19689BCA512284",
       "file": "game/accepted/library/src/lib/func_00208DC8.c",
       "symbols": [
         "func_00208DC8"
@@ -64129,8 +64129,8 @@
           ],
           "proof": {
             "path": "generated/c/func_00208DC8.source-object-proof.json",
-            "bytes": 37145,
-            "sha256": "9A60798AD5475C4E379C9CA54427ADB83F820239DCC2547EABA6739EF34A3FE8"
+            "bytes": 37149,
+            "sha256": "D9580DFC4F24D9931534410BF8406A8DE6356944D39818033A3A1D60D5291E68"
           },
           "textMode": "section-assigned",
           "physicalOwners": [
@@ -136799,7 +136799,7 @@
     {
       "source": "src/overlays/descriptor_14/func_002831E0.c",
       "sourceClass": "PURE_C",
-      "sourceSha256": "C7CE9FC72E2F55BC042D5F422CB95592882325EE99A4E9D8B96C7202C83EA61E",
+      "sourceSha256": "9171C4F3929EE2A64FB1173CE081BED85E763AD9C50BBE1CB8BA70B67DEDFC6B",
       "file": "game/accepted/library/src/overlays/descriptor_14/func_002831E0.c",
       "symbols": [
         "func_002831E0"
@@ -136813,7 +136813,7 @@
           "proof": {
             "path": "generated/c/func_002831E0.source-object-proof.json",
             "bytes": 19623,
-            "sha256": "29AEF7FB2179B01B9B5850371C78494858A37DD1447FA852A5C08F76551C83F4"
+            "sha256": "8D373D3B84020B1FDF36B8AEDFA0B735F7D84AA33CD35A2E88EB5D5EB6729C42"
           },
           "textMode": "section-assigned",
           "physicalOwners": [

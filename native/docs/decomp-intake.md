@@ -1,5 +1,21 @@
 # Using newly accepted Decomp C
 
+## November 20 audio argument corrections
+
+Decomp `b4278919` makes the gain and request arguments explicit in both matching sources.
+The owner count stays at 2,611. The source-export fingerprint is `81B60388`.
+Cutscenes executes the compiled gain wrapper and resident gain setters. Index 7 uses
+the default channel. The other indices read the scene's channel table. The registered
+request router forwards all 32 bits for a null channel outside mode 12. Its resident
+callee submits the low 16 bits to the queue. A non-null registration keeps the full word.
+
+A scene-entry RAM image supplies channel addresses, voice counts, deferred requests
+and the volume envelope when its script takes control. In Project64, Paul’s
+confrontation started with 18 voices on channel 0. The editor reproduced the fade
+from 24,576 to 15,036 over 30 updates, issued controller 120 and reached scene release.
+Playing that music requires advancing the resident sequencer and mixing its voices.
+The sound-effect audition uses the corrected request router and renders stereo audio.
+
 ## November 20 contributor matches
 
 Decomp PR 1 added 926 pure-C owners between `43a49d01` and `7177de63`.
@@ -13,7 +29,7 @@ original 40 MiB input in its native byte order.
 | --- | --- |
 | Cutscene controller queries | Director command `0x57` returns the pressed buttons when the mask is zero. A nonzero mask succeeds when none of its buttons were pressed. The title script uses this distinction for A and B. Preview handles the normal controller path. The alternate native directional-input mode still needs an input source in preview. |
 | Actor identity | Story cast and army roster selection call the same accepted `func_00045e5c` predicate for the five groups of interchangeable identities. |
-| Sound preview | Mixed and solo voices read the current ROM’s 128-entry stereo pan table in opposite directions for left and right. This also respects an edited table. Story audio commands expose the native request and gain. Audible story playback still needs the resident audio state. |
+| Sound preview | Mixed and solo voices read the current ROM’s 128-entry stereo pan table in opposite directions for left and right. This also respects an edited table. The cutscene player displays requests, controllers and volume changes. Playing inherited story music still needs the sequencer and mixer. |
 | Expanded armies | The native reset clears enemy sources and flagged deployment rows. The expanded version now does both for its relocated army and preserves player records and unflagged rows. |
 | Day and night duration | At retail settings export uses the exact accepted clock. Custom durations pace the native second and date helpers while keeping the saved seconds in 0–59. Previously a long day could exceed the six-bit save field. The earlier custom-clock format still reopens. |
 | Mission rewards and expanded armies | The export ownership check follows the complete compiled settlement function, its switch tables, and the actual operand locations per build variant. This covers authored missions combined with custom Goth and expanded armies. |
@@ -38,11 +54,8 @@ node native/tools/accepted-c-coverage.cjs --native native --decomp $decomp --bas
 node native/tools/audit-source-selection.cjs --decomp $decomp --state $verifiedState --require-whole-owners
 ```
 
-The verified fingerprint starts with `43DEDF47`. In the Director audio
-command `0x6F`, the compiled wrapper forwards the full gain in register
-`a1` to both callees. Its accepted C prototype omits that parameter. The
-portable adapter keeps the gain explicit. Decomp confirmed the calling
-convention independently.
+The initial contributor intake used fingerprint `43DEDF47`. The audio argument
+corrections above supersede the original gain prototype in that intake.
 
 ## November 18 Liedel text renderer
 

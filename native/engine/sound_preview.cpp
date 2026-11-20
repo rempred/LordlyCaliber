@@ -1,6 +1,7 @@
 #include "engine/sound_preview.h"
 #include "engine/effect_machine.h"
 #include "engine/sound_parts.h"
+#include "rebuild/accepted_rom.h"
 #include "rebuild/sound_preview_runtime.h"
 #include <QJsonDocument>
 #include "third_party/vadpcm/codec/vadpcm.h"
@@ -59,6 +60,8 @@ static SoundPreview render(const Rom &rom, int request,
     // Game-side request queue, including duplicate/priority/handle handling.
     // This relocated resident family uses ROM + 0x800AAA70, not the boot delta.
     m.mount(0x800e9c20, bytes.mid(0x3f1b0, 0x1cd0), true);
+    static const auto requestRouter = acceptedRomBytes(0x208dc8, 232);
+    m.mount(0x801c5938, requestRouter, true);
     if (bytes.mid(0x423ff0, 15) != "N64 PtrTablesV2")
         throw Error("Unsupported sound sample bank");
     m.registers[29] = 0x807ff000;
@@ -242,10 +245,7 @@ static SoundPreview render(const Rom &rom, int request,
             else if (!cue.pcm.isEmpty())
                 call(0x80083b24, {importedBanks[cue.pcm], 0, 128, 128, 0xffffffff});
             else if (cue.request >= 0 && cue.request < int(u32(bytes, 0x4e3144)))
-                // func_00208DC8's battle request is zero-based. The queue passes
-                // it unchanged to MusStartEffect; channel target IDs are a
-                // separate one-based field and must not be substituted here.
-                call(0x800ea604, {0, quint32(cue.request)});
+                call(0x801c5938, {0, quint32(cue.request)});
             else ++result.unresolved;
         }
         call(0x800eac24);

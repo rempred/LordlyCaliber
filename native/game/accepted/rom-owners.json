@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "generator": "native/tools/generate-accepted-owners.cjs",
-  "fingerprint": "43DEDF4797BFAA626E546565704AB09A13C5213A39614626DFF7D7DAD10E392E",
-  "revision": "44d90133adc7ca899aaf73256b275ced490f54f0",
+  "fingerprint": "81B603886B4D4582EF36675878849B082C30EC68DC5CA067A04C72E287C6EB3D",
+  "revision": "b42789195e6f3235ad8dc5e3c1f63f4503e12688",
   "counts": {
     "owners": 2611,
     "functions": 2684,
@@ -41104,7 +41104,7 @@
       "name": "func_00208DC8",
       "source": "game/accepted/library/src/lib/func_00208DC8.c",
       "sourcePath": "src/lib/func_00208DC8.c",
-      "sourceSha256": "4DFEBE4A24202E621AFB04779B90736084EF1D36EE527706DC08BD3E8AB3FE99",
+      "sourceSha256": "D9127600F1D3F9EDA2BEE13BDBDF46ED78E50679CAB594AF6A19689BCA512284",
       "headers": [],
       "address": 2149341496,
       "bindings": {
@@ -90793,7 +90793,7 @@
       "name": "func_002831E0",
       "source": "game/accepted/library/src/overlays/descriptor_14/func_002831E0.c",
       "sourcePath": "src/overlays/descriptor_14/func_002831E0.c",
-      "sourceSha256": "C7CE9FC72E2F55BC042D5F422CB95592882325EE99A4E9D8B96C7202C83EA61E",
+      "sourceSha256": "9171C4F3929EE2A64FB1173CE081BED85E763AD9C50BBE1CB8BA70B67DEDFC6B",
       "headers": [],
       "address": 2149741072,
       "bindings": {
