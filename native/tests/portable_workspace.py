@@ -24,7 +24,7 @@ class Portable:
         run = subprocess.run(args, input=json.dumps(ops), encoding="utf8", capture_output=True,
                              env=self.env, cwd=self.work, timeout=300)
         if run.returncode:
-            raise RuntimeError(run.stderr[-2400:])
+            raise RuntimeError(f"CLI exited with code {run.returncode}: {run.stderr[-2400:]}")
         return json.loads(run.stdout)
 
     def workspace(self, *extra, rom=None):
@@ -59,6 +59,10 @@ class Session:
         r = self.response()
         if not r["ok"]:
             raise RuntimeError(f"{cmd}: {r}")
+        if op == "save" and r.get("result") != kwargs["path"]:
+            dialog = self.call("controls")
+            messages = [c.get("text") for c in dialog["controls"] if c["type"] == "QLabel"]
+            raise RuntimeError(f"Save did not finish: {dialog['window']}: {messages}")
         return r.get("result")
 
     def page(self, *path):
@@ -235,7 +239,12 @@ def audit(client):
         battery=work/"edited.sra"
         ui.file(battery)
         assert battery.exists()
-    client.commands([], "--project",project,"--output",exported)
+    history, changelog = client.commands([{"op":"agent.edits"},{"op":"changes"}],
+                                         "--project",project,"--output",exported)["results"]
+    sections = {r["scope"].get("key") for r in history
+                if r["scope"]["kind"] == "section" and r["status"] == "Matches project"}
+    assert {"attacks", "consumableEffects", "tools", "spriteLibrary"} <= sections, sections
+    assert "CLI edits" in changelog and "Consumable effects" in changelog
     with client.workspace("--project",project) as ui:
         ui.page("Art Library","Artwork")
         assets = ui.call("items",name="spriteAssets")["items"]
@@ -327,7 +336,9 @@ def artwork_audit(client):
             snapshots[button]=(path,changed)
             print(title, "edited", flush=True)
         ui.call("save",path=str(project))
-    client.commands([],"--project",project,"--output",rom)
+    history = client.commands([{"op":"agent.edits"}],"--project",project,"--output",rom)["results"][0]
+    sections = {r["scope"].get("key") for r in history if r["status"] == "Matches project"}
+    assert {"categoryIcons","avatarArtwork","armyArtwork","combatArtwork"} <= sections, sections
     with client.workspace(rom=rom) as ui:
         for button,(path,expected) in snapshots.items():
             ui.page(*path)

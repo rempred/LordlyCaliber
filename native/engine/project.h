@@ -83,8 +83,7 @@ class Project {
     void loadCampaignMap();
     void setCampaignMap(const QJsonObject &);
     const std::optional<CampaignMap> &campaignMap() const { return campaignMap_; }
-    ChangeReport changeReport(const Project *reference = nullptr,
-                              bool includeAgentActivity = true) const;
+    ChangeReport changeReport(const Project *reference = nullptr) const;
     ChangeReport compareWithRom(Rom reference) const;
     QJsonObject manifest() const;
     QJsonArray codePatches() const { return retained_["codePatches"].toArray(); }

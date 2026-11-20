@@ -43,9 +43,24 @@ QJsonObject state(const Project &p) {
         obj.remove(key);
     return obj;
 }
-QString sectionResult(const QJsonValue &value) {
-    return value.isUndefined() ? QString("Restored the source setting")
-                               : QString("Updated project data");
+QString sectionResult(const QJsonValue &from, const QJsonValue &to) {
+    if (to.isUndefined())
+        return "Restored source settings";
+    if (from.isUndefined())
+        return "Saved custom settings";
+    if (from.isObject() && to.isObject()) {
+        const auto a = from.toObject(), b = to.toObject();
+        QStringList changed;
+        for (const auto &name : keysTogether(a, b))
+            if (a.value(name) != b.value(name))
+                changed << scopeTitle(name);
+        if (!changed.isEmpty()) {
+            const auto extra = changed.size() - 5;
+            return "Updated " + changed.mid(0, 5).join(", ") +
+                   (extra > 0 ? QString(" and %1 more").arg(extra) : QString());
+        }
+    }
+    return "Updated saved settings";
 }
 QString currentDigest(const Project &p, const QJsonObject &sc, const QJsonObject &sections,
                       const QMap<QString, QJsonObject> &patchMap) {
@@ -197,13 +212,12 @@ void recordAgentEdits(const Project &before, Project &after, const QString &sour
             a.isEmpty() ? QString() : digest(a), b.isEmpty() ? QString() : digest(b));
     }
     const auto a = state(before), b = state(after);
-    QStringList sections;
     for (const auto &key : keysTogether(a, b)) {
         if (a.value(key) == b.value(key))
             continue;
-        sections << key;
-        add({{"kind", "section"}, {"key", key}}, scopeTitle(key), sectionResult(b.value(key)),
-            digest(a.value(key)), digest(b.value(key)));
+        // Compare serialized project state. Workspaces load domain models on demand.
+        add({{"kind", "section"}, {"key", key}}, scopeTitle(key),
+            sectionResult(a.value(key), b.value(key)), digest(a.value(key)), digest(b.value(key)));
     }
     auto history = before.agentActivity();
     if (history != after.agentActivity()) {
@@ -218,35 +232,12 @@ void recordAgentEdits(const Project &before, Project &after, const QString &sour
         after.setAgentActivity(history);
         return;
     }
-    QJsonArray details;
-    if (!sections.isEmpty()) {
-        // Reuse the editor's domain-specific descriptions for animation, scenes,
-        // artwork and other compound formats. The ordinary report compares models.
-        for (const auto &entry : after.changeReport(&before, false).entries) {
-            if (entry.location.editor == "classes" || entry.location.editor == "items" ||
-                entry.location.editor == "consumables" || entry.area == "Code patches")
-                continue;
-            details.append(QJsonObject{{"area", entry.area},
-                                       {"subject", entry.subject},
-                                       {"details", QJsonArray::fromStringList(entry.details)}});
-        }
-        if (sections.size() == 1 && !details.isEmpty()) {
-            auto entry = details.first().toObject();
-            const auto lines = entry["details"].toArray();
-            auto row = edits.last().toObject();
-            row["description"] =
-                entry["subject"].toString() +
-                (lines.isEmpty() ? QString() : " · " + lines.first().toString().left(180));
-            edits.replace(edits.size() - 1, row);
-        }
-    }
     history.append(
         QJsonObject{{"id", QUuid::createUuid().toString(QUuid::WithoutBraces)},
                     {"time", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
                     {"source", source},
                     {"edits", edits},
-                    {"actions", QJsonArray::fromStringList(actions)},
-                    {"details", details}});
+                    {"actions", QJsonArray::fromStringList(actions)}});
     after.setAgentActivity(history);
 }
 QJsonArray agentEditRows(const Project &p) {
@@ -273,6 +264,8 @@ QJsonArray agentEditRows(const Project &p) {
             row["batch"] = batch["id"];
             row["time"] = batch["time"];
             row["source"] = batch["source"];
+            if (scope["kind"] == "section")
+                row["actions"] = batch["actions"];
             out.append(row);
         }
     }

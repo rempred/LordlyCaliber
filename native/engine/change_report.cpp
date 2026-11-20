@@ -117,7 +117,7 @@ ChangeReport Project::compareWithRom(Rom rom) const {
     return current.changeReport(&reference);
 }
 
-ChangeReport Project::changeReport(const Project *reference, bool includeAgentActivity) const {
+ChangeReport Project::changeReport(const Project *reference) const {
     const auto &baseRom = reference ? reference->rom_ : rom_;
     ChangeReport report;
     report.source = QFileInfo(baseRom.sourcePath()).fileName();
@@ -913,15 +913,18 @@ ChangeReport Project::changeReport(const Project *reference, bool includeAgentAc
     for (const auto &section : pendingLegacySections())
         add("Imported project data", friendly(section),
             {"Retained browser data awaiting native conversion; not a verified ROM edit."});
-    if (includeAgentActivity) {
-        for (const auto &v : agentEditRows(*this)) {
-            const auto r = v.toObject();
-            add("CLI edits", r["subject"].toString(),
-                {r["description"].toString(), r["status"].toString() + " · " +
-                                                  r["source"].toString() + " · " +
-                                                  r["time"].toString()},
-                {"agents"});
+    QSet<QString> listedBatches;
+    for (const auto &v : agentEditRows(*this)) {
+        const auto r = v.toObject();
+        QStringList lines{r["description"].toString(), r["status"].toString() + " · " +
+                              r["source"].toString() + " · " + r["time"].toString()};
+        const auto batch = r["batch"].toString();
+        if (!r["actions"].toArray().isEmpty() && !listedBatches.contains(batch)) {
+            for (const auto &action : r["actions"].toArray())
+                lines << action.toString();
+            listedBatches.insert(batch);
         }
+        add("CLI edits", r["subject"].toString(), lines, {"agents"});
     }
     return report;
 }
