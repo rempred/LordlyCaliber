@@ -6,6 +6,8 @@ class QWidget;
 namespace lordly {
 struct Attack;
 bool effectTargetsAllies(const Attack &);
+int retailTargetPattern(const Rom &, const Attack &);
+bool usesRetailSixStrikes(const Attack &, int pattern);
 enum class EffectExport { AnimatedPng, FramesZip, Webm };
 SpriteAsset effectSequence(const QVector<QImage> &, const QVector<int> &, const QString &name);
 bool exportEffectSequence(const SpriteAsset &, const QString &, EffectExport, QWidget *parent);
@@ -16,6 +18,7 @@ struct EffectClip {
     QString error;
     QMap<quint32, EffectArtwork> artwork;
     QVector<AudioCue> audio;
+    QVector<EffectPlayer::Impact> contacts;
 };
 QMap<int, QString> effectNames(const Rom &);
 QImage effectChecker(const QImage &);

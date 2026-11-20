@@ -64,6 +64,7 @@ class AttackEffectEditor : public QDialog {
     bool refreshing_ = false, playing_ = false, enemyPreview_ = false;
     QLabel *preview_, *source_, *notice_, *comparison_;
     QLabel *framePosition_;
+    QComboBox *sampleTargets_, *contacts_;
     AudioCueView *audio_;
     SoundOutput *soundOutput_;
     QCheckBox *soundEnabled_;

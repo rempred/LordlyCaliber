@@ -33,7 +33,9 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     if (scene.sourceClass < 0 || scene.sourceClass > 255 || scene.targetClass < 0 ||
         scene.targetClass > 255 || scene.sourceHeight < 0 || scene.sourceHeight > 1024 ||
         scene.targetHeight < 0 || scene.targetHeight > 1024 || scene.targetCount < 1 ||
-        scene.targetCount > 5 || scene.strikeCount < 0 || scene.strikeCount > AttackData::maximumStrikes)
+        scene.targetCount > 5 || scene.strikeCount < 0 || scene.strikeCount > AttackData::maximumStrikes ||
+        scene.fixedTargetCell < -1 || scene.fixedTargetCell >= 9 ||
+        (scene.fixedTargetCell >= 0 && scene.targetCount != 1))
         throw Error("Invalid effect preview actors");
     scene_ = scene;
     if (!scene_.bodyAnimations)
@@ -242,10 +244,11 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     m.byte(inputs, quint8(sourceBase));
     // Area effects use neighbouring actors for their visual choreography.
     // This neutral full formation never changes the attack's damage targets.
-    const int targets = scene.strikeCount ? scene.strikeCount : scene.targetCount;
+    const int targets = scene.retailSixStrikes ? 6 : scene.strikeCount ? scene.strikeCount : scene.targetCount;
     for (int i = 0; i < targets; ++i) {
-        m.byte(inputs + 20 + i, quint8(targetBase + i % scene.targetCount));
-        m.byte(inputs + 40 + i, scene.strikeCount ? 0 : quint8(targetBase + i));
+        const int cell = scene.fixedTargetCell >= 0 ? scene.fixedTargetCell : i % scene.targetCount;
+        m.byte(inputs + 20 + i, quint8(targetBase + cell));
+        m.byte(inputs + 40 + i, scene.strikeCount ? 0 : quint8(targetBase + cell));
     }
     if (scene.strikeCount) m.byte(inputs + 40, 128);
     m.word(0x801ce8bc, battle);
@@ -269,8 +272,9 @@ void EffectPlayer::start(int effect, const Scene &scene) {
     for (int i = 0; i < 18; ++i) {
         const auto a = battle + 0x1c4 + i * 0xf8;
         const int cell = i % 9, row = cell / 3, col = cell % 3;
-        const bool occupied = cell < 5;
         const bool caster = i == sourceBase;
+        const bool fixedFormation = scene.fixedTargetCell >= 0 && i / 9 == targetBase / 9;
+        const bool occupied = caster || (fixedFormation ? cell == scene.fixedTargetCell : cell < 5);
         const int classId = occupied ? (caster ? scene.sourceClass : scene.targetClass) : 0;
         m.word(a + 0x48, classId);
         m.word(a + 0x4c, occupied ? (caster ? scene_.sourceCurrentClass : scene_.targetCurrentClass) : 0);

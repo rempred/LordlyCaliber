@@ -1208,6 +1208,26 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         editor.selectAttack(76); // Retail Gnome: opening the control changes nothing.
         const auto before = project.manifest();
         QVERIFY(!count->parentWidget()->isHidden()); QCOMPARE(count->value(), 6);
+        {
+            AttackEffectEditor preview(&project,76,2);
+            preview.show();
+            auto targets=preview.findChild<QComboBox *>("effectSampleTargets");
+            auto contacts=preview.findChild<QComboBox *>("effectContacts");
+            QVERIFY(targets && targets->isVisible() && contacts);
+            QTRY_COMPARE_WITH_TIMEOUT(contacts->count(),6,45000);
+            for (int slot=1;slot<=5;++slot)
+                QVERIFY(contacts->findText(QString("enemy slot %1").arg(slot),Qt::MatchContains)>=0);
+            targets->setCurrentIndex(targets->findData(8));
+            QTRY_COMPARE_WITH_TIMEOUT(contacts->count(),6,45000);
+            for(int i=0;i<6;++i)QVERIFY(contacts->itemText(i).contains("enemy slot 9"));
+            contacts->setCurrentIndex(5);emit contacts->activated(5);
+            QVERIFY(preview.findChild<QLabel *>("effectFramePosition")->text()
+                .startsWith(QString("Frame %1 /").arg(contacts->itemData(5).toInt()+1)));
+            preview.findChild<QPushButton *>("effectPreviewEnemy")->click();
+            QTRY_COMPARE_WITH_TIMEOUT(contacts->count(),6,45000);
+            QVERIFY(contacts->itemText(5).contains("player slot 9"));
+            QCOMPARE(project.manifest(),before);
+        }
         emit count->editingFinished(); QCOMPARE(project.manifest(), before);
         count->setValue(3); emit count->editingFinished(); QCoreApplication::processEvents();
         QCOMPARE(project.attacks()->entry(76).targetPattern, 11);

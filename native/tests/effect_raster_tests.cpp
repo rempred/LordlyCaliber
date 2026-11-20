@@ -304,6 +304,7 @@ class EffectRasterTests : public QObject {
                 for (int count : {1, 6, 18}) {
                     EffectPlayer::Scene scene;
                     scene.targetCount = 1; scene.strikeCount = count;
+                    scene.fixedTargetCell = count == 1 ? 8 : count == 6 ? 4 : 0;
                     scene.enemyCaster = count != 18;
                     scene.allies = effect == 32;
                     AttackVisual visual; visual.nativeEffect = effect;
@@ -311,8 +312,9 @@ class EffectRasterTests : public QObject {
                     player.startVisual(visual, effect, scene);
                     while (player.advance()) player.draw({160,120}, .375);
                     QCOMPARE(player.impacts().size(), count);
-                    const int expectedTarget = scene.allies ? (scene.enemyCaster ? 0 : 9)
-                                                            : (scene.enemyCaster ? 9 : 0);
+                    const int targetSide = scene.allies ? (scene.enemyCaster ? 0 : 9)
+                                                        : (scene.enemyCaster ? 9 : 0);
+                    const int expectedTarget = targetSide + scene.fixedTargetCell;
                     int previous = -1;
                     for (const auto &impact : player.impacts()) {
                         QCOMPARE(impact.target, expectedTarget);

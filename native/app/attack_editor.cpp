@@ -1,4 +1,5 @@
 #include "app/attack_editor.h"
+#include "app/effect_artwork.h"
 #include "app/actor_pose_editor.h"
 #include "app/attack_effect_editor.h"
 #include "app/content_refresh.h"
@@ -102,32 +103,6 @@ QString attackName(const AttackData &attacks, int id) {
     return id > 0 && id < attacks.entries().size() ? AttackData::displayName(attacks.entry(id))
                                                    : QString("ID %1").arg(id);
 }
-int nativeSpellIndex(const Attack &a) {
-    const int id = a.animation;
-    return quint8(id - 17) < 28   ? quint8(id + 80)
-           : quint8(id + 110) < 8 ? quint8(id + 235)
-           : quint8(id - 55) < 36 ? quint8(id + 201)
-           : quint8(id - 91) < 54 ? quint8(id + 204)
-           : quint8(id + 102) < 3 ? quint8(id + 138)
-                                  : 1;
-}
-int nativePattern(const Project &project, const Attack &a) {
-    if (!u8(a.data, 2))
-        return 0;
-    if (u8(a.data, 0) < 2)
-        return 1;
-    if (u8(a.data, 0) == 3) {
-        const int index = nativeSpellIndex(a);
-        return u8(project.rom().bytes(), 0x212181 + 2 * index) & 15;
-    }
-    const int selector = u8(a.data, 2);
-    return selector == 2   ? 6
-           : selector == 3 ? 2
-           : selector == 4 ? 12
-           : selector == 5 ? 10
-           : selector == 6 ? 5
-                           : 1;
-}
 QString nativeSideName(const Attack &a) {
     if (!u8(a.data, 2))
         return "No targets";
@@ -135,7 +110,7 @@ QString nativeSideName(const Attack &a) {
         return QString("Unknown target side (execution ID %1)").arg(u8(a.data, 0));
     // Native target builder 00238D94 uses 0020C364's spell-index predicate,
     // not D3. Changing a spell's main effect alone does not change its side.
-    const int index = nativeSpellIndex(a);
+    const int index = EffectPlayer::retailEffect(a.animation);
     return u8(a.data, 0) >= 2 && ((index >= 32 && index <= 35) || index == 103)
                ? "Allies (including user)"
                : "Opponents";
@@ -758,7 +733,7 @@ void AttackEditor::showAttack() {
                                       "keeps the assigned animation.")
                                   .arg(AttackData::elements().value(reduced[element - 9])));
     }
-    const int originalPattern = nativePattern(*project_, a);
+    const int originalPattern = retailTargetPattern(project_->rom(), a);
     const QString automaticSide = effect == 2 || effect == 5 || effect == 6 || effect == 11
                                       ? "Allies (including user)" : "Opponents";
     side_->setItemText(side_->findData(0), templ ? "From resolved spell"
@@ -772,8 +747,7 @@ void AttackEditor::showAttack() {
     choose(pattern_, a.targetPattern);
     side_->setEnabled(!templ && a.targetPattern != 9);
     pattern_->setEnabled(!templ);
-    const bool retailStrikes = !a.targetPattern && !a.targetSide &&
-                               (originalPattern == 9 || originalPattern == 10);
+    const bool retailStrikes = usesRetailSixStrikes(a,originalPattern);
     strikePanel_->setVisible(!templ && (retailStrikes || a.targetPattern == 11));
     strikeCount_->setValue(retailStrikes ? 6 : a.strikeCount);
     int mask = a.targetPattern == 12                          ? a.targetMask

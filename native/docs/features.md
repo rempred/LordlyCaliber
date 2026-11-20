@@ -166,6 +166,8 @@ its accepted bytes; exports preserve modified and unknown data. An untouched US
 Rev0 ROM exports byte-for-byte identically, including its original byte order.
 Effect previews use the completed accepted attack-effects C batch.
 
+For a repeated-strike attack, **Edit attack effect → Sample targets** can cycle through five formation slots or put one actor in a chosen slot. **Go to contact** lists each observed visual contact with its tick, army and slot. Select one to see its frame. The supplied targets are preview inputs. Battle target selection also depends on the live formation and target-selection rule.
+
 In **Logic → Player decisions**, retaining one branch shows both answers reaching the same outcome. For an inserted flag condition, **Preview decision → Test story flags** lets you supply the missing campaign flag and play the answer. Sample flags last for the current scene selection. Re-export an older project containing an inserted condition to use the corrected mission-event jump helper.
 
 A gift in **Cutscenes** shows the item supplied by the selected event, the verified flags that follow it, and a recognized consumable inventory grant when present. Changing the sample reward changes the picture for the preview. For example, changing the Bacchus gift's displayed item in the event can leave the Pedra of Bane unlock intact.

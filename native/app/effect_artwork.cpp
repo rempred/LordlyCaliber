@@ -11,6 +11,26 @@
 #include <algorithm>
 extern "C" unsigned int lc_effect_color(unsigned int, int, int, unsigned int);
 namespace lordly {
+int retailTargetPattern(const Rom &rom, const Attack &a) {
+    if (!u8(a.data, 2))
+        return 0;
+    if (u8(a.data, 0) < 2)
+        return 1;
+    if (u8(a.data, 0) == 3) {
+        const int index = EffectPlayer::retailEffect(a.animation);
+        return u8(rom.bytes(), 0x212181 + 2 * index) & 15;
+    }
+    const int selector = u8(a.data, 2);
+    return selector == 2   ? 6
+           : selector == 3 ? 2
+           : selector == 4 ? 12
+           : selector == 5 ? 10
+           : selector == 6 ? 5
+                           : 1;
+}
+bool usesRetailSixStrikes(const Attack &attack, int pattern) {
+    return !attack.targetPattern && !attack.targetSide && (pattern == 9 || pattern == 10);
+}
 bool effectTargetsAllies(const Attack &attack) {
     const int main = u8(attack.data, 7), spell = EffectPlayer::retailEffect(attack.animation);
     return attack.targetPattern == 9 || attack.targetSide >= 2 ||
@@ -161,6 +181,7 @@ EffectClip renderEffectClip(const Rom &rom, const AttackVisual &visual, int inhe
             ++clip.ticks;
         }
         clip.audio = player.audioCues();
+        clip.contacts = player.impacts();
         for(auto &cue:clip.audio)if(!cue.pcm.isEmpty())
             for(const auto &sound:visual.audio.sounds)if(sound.pcm==cue.pcm){cue.label=sound.name;break;}
         for (const auto &r : player.resources()) {

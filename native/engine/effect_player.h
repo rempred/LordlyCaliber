@@ -26,6 +26,8 @@ class EffectPlayer {
         BodyAnimationData::Pointer bodyAnimations;
         bool allies = false;
         bool enemyCaster = true; // Native actor slots 0–8 have opponent flag 0x100.
+        int fixedTargetCell = -1; // A single supplied actor in the target army's 3 × 3 grid.
+        bool retailSixStrikes = false; // Supply six entries to the original effect controller.
     };
     explicit EffectPlayer(const Rom &);
     void start(int effect, const Scene &);

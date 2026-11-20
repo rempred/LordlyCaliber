@@ -198,6 +198,32 @@ AttackEffectEditor::AttackEffectEditor(Project *p, int attack, int classId, QWid
     exportFrame_ = new QPushButton("Export…");
     exportFrame_->setObjectName("effectExportFrame");
     exportRow->addWidget(exportFrame_);
+    auto contactSetup = new QWidget;
+    auto contactRow = new QHBoxLayout(contactSetup);
+    contactRow->setContentsMargins(0,0,0,0);
+    contactRow->addWidget(new QLabel("Sample targets"));
+    sampleTargets_ = new QComboBox;
+    sampleTargets_->setObjectName("effectSampleTargets");
+    sampleTargets_->setToolTip("Supply targets for visual playback. A battle chooses targets from its live formation.");
+    sampleTargets_->addItem(a.targetSide == 3 ? "Caster" : "Cycle five slots", -1);
+    if (a.targetSide != 3)
+        for (int cell=0;cell<9;++cell)
+            sampleTargets_->addItem(QString("One actor in slot %1").arg(cell+1),cell);
+    contactRow->addWidget(sampleTargets_);
+    contactRow->addWidget(new QLabel("Go to contact"));
+    contacts_ = new QComboBox;
+    contacts_->setObjectName("effectContacts");
+    contactRow->addWidget(contacts_,1);
+    contactSetup->setVisible(a.targetPattern == 11 || usesRetailSixStrikes(a,retailTargetPattern(p->rom(),a)));
+    scene->addWidget(contactSetup);
+    connect(sampleTargets_,&QComboBox::currentIndexChanged,this,[this] { render(); });
+    connect(contacts_,&QComboBox::activated,this,[this](int index) {
+        const int tick=contacts_->itemData(index).toInt();
+        pausePlayback();
+        pausedMs_=(qint64(tick)*1000+29)/30;
+        restartOnPlay_=false;
+        showFrame();
+    });
     auto audioGroup = new QGroupBox("Sound cues");
     auto audioLayout = new QVBoxLayout(audioGroup);
     audio_ = new AudioCueView([this](int tick) {
@@ -618,6 +644,8 @@ void AttackEffectEditor::render() {
     const auto cancel = canceled_;
     const int generation = ++generation_;
     clip_.clear();
+    contacts_->clear();
+    contacts_->setEnabled(false);
     holds_.clear();
     clipTicks_ = 0;
     audio_->setMessage("Preparing effect sound cues…");
@@ -640,6 +668,8 @@ void AttackEffectEditor::render() {
     const bool enemyPreview = enemyPreview_;
     const int inherited = std::max(0, inherited_), classId = classId_;
     const auto attack = project_->attacks()->entry(attack_);
+    const bool retailStrikes = usesRetailSixStrikes(attack,retailTargetPattern(rom,attack));
+    const int fixedTarget = attack.targetPattern == 11 || retailStrikes ? sampleTargets_->currentData().toInt() : -1;
     const bool allies = effectTargetsAllies(attack);
     const int targetCount = attack.targetPattern == 9 || attack.targetSide == 3 || attack.targetPattern == 1 ? 1 : 5;
     const int strikes = attack.targetPattern == 11 ? attack.strikeCount : 0;
@@ -658,6 +688,13 @@ void AttackEffectEditor::render() {
         clip_ = result.images;
         holds_ = result.holds;
         clipTicks_ = result.ticks;
+        for (const auto &hit : result.contacts) {
+            const QString side=hit.target < 9 ? "enemy" : "player";
+            contacts_->addItem(QString("%1 · %2 slot %3 · tick %4").arg(contacts_->count()+1)
+                .arg(side).arg(hit.target%9+1).arg(hit.tick), hit.tick);
+        }
+        contacts_->setEnabled(!result.contacts.isEmpty());
+        if (result.contacts.isEmpty()) contacts_->addItem("No visual contacts recorded");
         const int effect = visual_.nativeEffect < 0 ? inherited_ : visual_.nativeEffect;
         audio_->setCues(result.audio, effectNames(project_->rom()).value(effect,"Imported effect"),true);
         soundCues_ = result.audio;
@@ -669,13 +706,15 @@ void AttackEffectEditor::render() {
         showFrame();
     });
     watcher->setFuture(
-        QtConcurrent::run([rom, bodyAnimations, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes, attack] {
+        QtConcurrent::run([rom, bodyAnimations, visual, inherited, classId, cancel, enemyPreview, allies, targetCount, strikes, attack, fixedTarget, retailStrikes] {
             EffectPlayer::Scene scene;
             scene.bodyAnimations = bodyAnimations;
             scene.sourceClass = classId;
             scene.enemyCaster = enemyPreview;
             scene.allies = allies;
-            scene.targetCount = targetCount;
+            scene.fixedTargetCell = fixedTarget;
+            scene.retailSixStrikes = retailStrikes;
+            scene.targetCount = fixedTarget >= 0 ? 1 : targetCount;
             scene.strikeCount = strikes;
             scene.attack = attack.animation;
             return renderEffectClip(rom, visual, inherited, scene, cancel);
