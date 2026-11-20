@@ -27,6 +27,16 @@ That first command works before you choose a ROM. When you’re ready to edit, g
 
 Open the returned archive with **File → Open project…**. **Tools → Agents** shows its recorded edits and **Project code patches** opens the editable patch source.
 
+## Report problems with the CLI or editor
+
+Tell the user as soon as you notice an error or inconsistency, even if you find a workaround. This includes a CLI command that disagrees with the guide, a desktop control that behaves unexpectedly, or a preview that differs from the saved project or exported game. Explain what you observed and how it affects the user’s task.
+
+Draft a short feedback report. Include the editor or CLI version, the command or editor steps, the expected and actual results, and any workaround you verified. Use placeholders for private file paths. Show the draft to the user and ask how they’d like to share it.
+
+> Would you like to post this report in Discord yourself, or do you approve me filing it as a GitHub issue?
+
+If the user chooses Discord, give them the text to post. File the report on GitHub only after the user explicitly approves that report, then give them the issue link. [Lordly Caliber issue tracker](https://github.com/rempred/LordlyCaliber/issues/new)
+
 ## Discover and edit
 
 The same tab and **File → Review project changes…** show CLI activity saved in the project folder or sharing archive. Use `{"op":"agent.edits"}` to read it as JSON and `{"op":"changes"}` for the changelog. It records effective project changes, including bulk field edits, source patch changes, and edits made in the CLI desktop workspace. Reads and repeat saves create no entries. Individual fields and patches have their own status. Compound edits compare the saved section as a whole. A later edit can replace or revert a recorded value. An older project can still list its custom patches even when it has no attribution history. To retain source and activity, save the project as well as exporting the game.
