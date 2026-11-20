@@ -38,7 +38,9 @@ class EventFlowTests:public QObject {
     static const StoryEvent &entry(const QVector<StoryEvent> &events,int at){for(const auto &e:events)if(e.entry==at)return e;throw Error("Missing story event");}
   private slots:
     void resumeEditedStoryRule() {
-        const auto rom = Rom::open(qEnvironmentVariable("LORDLY_TEST_ROM"));
+        const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");
+        if (path.isEmpty()) QSKIP("Retail ROM required");
+        const auto rom = Rom::open(path);
         auto bytes = SceneEvents::retailRow(rom, 22);
         auto next = [&](int answer) { return storyReaction(bytes, 22, 0, 542, 544, answer, {}); };
         auto orders = next(1), peace = next(255);

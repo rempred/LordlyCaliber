@@ -200,11 +200,16 @@ QByteArray Compiler::compileAtLayout(const QByteArray &source, const QString &di
     if (!tables.isEmpty())
         constants = QString(" .rodata 0x%1 : { *(.rodata) }")
                         .arg(tables.first().toObject()["address"].toInteger(), 0, 16).toLatin1();
-    const auto linkScript = bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } %4 }\n")
+    // The KMC linker can leave an orphan .scommon at address zero. Group it
+    // with BSS so binary extraction omits it and compileModule sees its size.
+    const QString bss = fixedLayout.isEmpty() && section == ".text"
+        ? " .bss : { *(.bss) *(.sbss) *(.scommon) *(COMMON) }" : "";
+    const auto linkScript = bindings + QString("SECTIONS { %1 0x%2 : { *(%1) %3 } %4%5 }\n")
                                        .arg(section)
                                        .arg(address, 0, 16)
                                        .arg(inlineReadOnlyData ? "*(.rodata) *(.rdata) *(.lit4) *(.lit8)" : "")
                                        .arg(QString::fromLatin1(constants))
+                                       .arg(bss)
                                        .toLatin1();
     atomicWrite(script, linkScript);
     const QStringList link = {"-EB", "-m", "elf32bmip", "-T", script, "-o", elf, object};

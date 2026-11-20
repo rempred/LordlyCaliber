@@ -5041,6 +5041,8 @@ unsigned char result[] = { LC_TWICE(21), sizeof(void *), sizeof(long), sizeof("/
             Error, compiler.compileModule(
                        "unsigned int state;\nunsigned int use_state(void) { return state; }\n",
                        work.path(), "requires_bss", 0x80187c14));
+        // This one-function module must never materialize the gap from zero to its load address.
+        QVERIFY(QFileInfo(work.filePath("requires_bss.bin")).size() < 256);
     }
     void linkedModuleConstants() {
         const auto tools = qEnvironmentVariable("LORDLY_N64_TOOLCHAIN");
