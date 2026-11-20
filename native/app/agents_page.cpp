@@ -55,6 +55,10 @@ AgentsPage::AgentsPage(Project *p, QUndoStack *undo, QWidget *parent)
     if (QFileInfo(path).isFile()) {
         cli->setText(path);
         cli->setCursorPosition(0);
+        auto hint = new QLabel("The CLI comes with the editor. Paste the path above into your "
+                               "agent’s chat and ask it to run the CLI on this computer with --guide.");
+        hint->setWordWrap(true);
+        layout->addWidget(hint);
     } else {
         cli->setPlaceholderText("CLI missing. Extract the full Windows ZIP to this folder.");
     }

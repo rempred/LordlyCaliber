@@ -4,11 +4,15 @@ Use the portable editor and your own game ROM. The CLI runs locally. Its structu
 
 ## Give your agent a task
 
-Open **Tools → Agents** and copy the **CLI path**. It points to `LordlyCaliber-cli.exe` beside the editor in the extracted Windows ZIP. For a new installation, use the [Lordly Caliber downloads](https://github.com/rempred/LordlyCaliber/releases).
+The editor’s Windows ZIP includes the CLI. Extract the whole ZIP and open the editor. [Lordly Caliber downloads](https://github.com/rempred/LordlyCaliber/releases)
 
-Give your agent the CLI path and the path to your source ROM. To continue an existing project, save it first and include the path to its project folder or `.lcproject` archive. The agent works in its own editor session. You can start a request with this sentence.
+In **Tools → Agents**, copy the **CLI path**. Paste it into a message like this for an agent that can run commands on this computer.
 
-> Use the Lordly Caliber CLI at [CLI path] with my ROM at [ROM path] and my project at [project path]. Read the shipped guide with `--guide`. Save your edits as a new .lcproject and tell me where to open it.
+> Run `[CLI path]` with `--guide` and tell me what I can edit.
+
+That first command works before you choose a ROM. When you’re ready to edit, give the agent your source ROM path. To continue an existing project, save it first and include the path to its project folder or `.lcproject` archive.
+
+> Use my ROM at [ROM path] and my project at [project path]. Save your edits as a new .lcproject and tell me where to open it.
 
 ### Example prompts
 
