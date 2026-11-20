@@ -4,6 +4,10 @@ Use the portable editor and your own game ROM. The CLI runs locally. Its structu
 
 ## Discover and edit
 
+In the desktop editor, open **Tools → Agents** to find this installation’s CLI, the loaded ROM and the saved project path. Choose a prompt, edit the task in your own words, then copy the prompt with its connection information. Save pending desktop edits first. An agent can open the saved project, write a new sharing archive, and give that archive back to you. **Open agent project…** loads the result.
+
+The same tab and **File → Review project changes…** show CLI activity saved in the project folder or sharing archive. Use `{"op":"agent.edits"}` to read it as JSON and `{"op":"changes"}` for the changelog. It records effective project changes, including bulk field edits, source patch changes, and edits made in the CLI desktop workspace. Reads and repeat saves create no entries. Individual fields and patches have their own status. Compound edits compare the saved section as a whole. A later edit can replace or revert a recorded value. An older project can still list its custom patches even when it has no attribution history. To retain source and activity, save the project as well as exporting the game.
+
 Run `LordlyCaliber-cli --guide` to read this guide in a terminal, including before opening a ROM. The install includes the [game-code reference](agent-game-code.md) and a [runnable C and assembly example](agent-patch-example.py). With a ROM open, the `read` command accepts their paths under `reference/`. Search the supplied documentation by gameplay terms with `{"op":"lookup","query":"actor identity"}`. Each hit gives its file, line and passage. Search matches all supplied words within the same passage.
 
 Run `LordlyCaliber-cli --capabilities` to list operations. Pass `--commands` a UTF-8 JSON file containing an array, or use `--commands -` to read the array from standard input. The result at each index in `results` belongs to the command at the same index. Add `"page":{"start":0,"limit":20}` to a list command to receive its total and one page. A failed command identifies its index and exits before writing a project or ROM.

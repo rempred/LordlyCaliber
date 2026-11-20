@@ -17,6 +17,8 @@
 #include "app/art_editor.h"
 #include "app/change_report_dialog.h"
 #include "app/code_patch_dialog.h"
+#include "app/agents_page.h"
+#include "engine/agent_activity.h"
 #include "app/project_review_dialog.h"
 #include "app/combat_editor.h"
 #include "app/combat_animation_editor.h"
@@ -150,9 +152,10 @@ bool MainWindow::eventFilter(QObject *object, QEvent *event) {
     }
     return QMainWindow::eventFilter(object, event);
 }
-MainWindow::MainWindow(QWidget *parent)
+MainWindow::MainWindow(QWidget *parent, bool agentSession)
     : QMainWindow(parent), undo_(new QUndoStack(this)), workspaces_(new QTabWidget(this)),
       summary_(new QLabel(this)) {
+    agentSession_ = agentSession;
     qApp->installEventFilter(this);
     undo_->setUndoLimit(128);
     connect(undo_, &QUndoStack::indexChanged, this, [this] {
@@ -187,16 +190,19 @@ MainWindow::MainWindow(QWidget *parent)
             loadRom(path);
     });
     open->setShortcut(QKeySequence::Open);
-    file->addAction("Open &project…", this, &MainWindow::openProject);
+    file->addAction("Open &project…", this, &MainWindow::openProject)
+        ->setObjectName("openSavedProject");
     file->addAction("Project code patches…", this, [this] {
         if (project_) showCodePatches(this,*project_,*undo_);
     })->setObjectName("showProjectCodePatches");
     auto save = file->addAction("Save project &folder…", this, [this] { saveProject(false); });
     save->setShortcut(QKeySequence::Save);
-    file->addAction("Save sharing &archive…", this, [this] { saveProject(true); });
+    file->addAction("Save sharing &archive…", this, [this] { saveProject(true); })
+        ->setObjectName("saveSharingArchive");
     auto review = file->addAction("Review project &changes…", this, [this] {
         if (project_) {
-            ChangeReportDialog dialog(*project_, this);
+            auto snapshot = activitySnapshot();
+            ChangeReportDialog dialog(snapshot, this);
             connect(&dialog, &ChangeReportDialog::editRequested, this, &MainWindow::navigateTo);
             dialog.exec();
         }
@@ -332,6 +338,8 @@ void MainWindow::installProject(Project project) {
         delete old;
     }
     project_ = std::make_unique<Project>(std::move(project));
+    if (agentSession_)
+        agentBaseline_ = std::make_unique<Project>(*project_);
     addRecordWorkspace(Table::Classes, "Classes");
     if(project_->rom().revision()==0) {
         auto attacks=new AttackEditor(project_.get(),undo_,[this]{updateStatus();});
@@ -1273,6 +1281,7 @@ bool MainWindow::openProjectFile(const QString &path) {
     else
         next.importLegacy(object);
     auto warnings = next.importWarnings();
+    next.setProjectPath(QFileInfo(path).absoluteFilePath());
     installProject(std::move(next));
     projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
     if (sourcePolicy == Project::SourcePolicy::ImportIntoCurrentRom) {
@@ -1286,6 +1295,17 @@ bool MainWindow::openProjectFile(const QString &path) {
 }
 void MainWindow::saveProject(bool archive) {
     saveProjectTo({}, archive);
+}
+Project MainWindow::activitySnapshot() const {
+    auto snapshot = *project_;
+    if (agentBaseline_) {
+        QStringList actions;
+        for (int i = std::max(0, undo_->cleanIndex()); i < undo_->index(); ++i)
+            actions << undo_->command(i)->text();
+        actions.removeDuplicates();
+        recordAgentEdits(*agentBaseline_, snapshot, "CLI workspace", actions);
+    }
+    return snapshot;
 }
 bool MainWindow::saveProjectTo(QString path, bool archive) {
     if (loading_)
@@ -1307,12 +1327,24 @@ bool MainWindow::saveProjectTo(QString path, bool archive) {
     if (path.isEmpty())
         return false;
     try {
+        std::optional<Project> recorded;
+        if (agentBaseline_)
+            recorded.emplace(activitySnapshot());
+        const auto &saved = recorded ? *recorded : *project_;
         if (archive)
-            project_->saveArchive(path);
+            saved.saveArchive(path);
         else
-            project_->saveFolder(path);
+            saved.saveFolder(path);
+        project_->setProjectPath(QFileInfo(path).absoluteFilePath());
+        if (recorded) {
+            project_->setAgentActivity(recorded->agentActivity());
+            *agentBaseline_ = *project_;
+        }
         undo_->setClean();
         projectLabel_ = QFileInfo(path).isDir() ? QDir(path).dirName() : QFileInfo(path).fileName();
+        for (auto page : workspaces_->findChildren<QWidget *>("agentsPage"))
+            if (auto agents = dynamic_cast<AgentsPage *>(page); agents && agents->isVisible())
+                agents->refresh();
         clearRecovery();
         statusBar()->showMessage("Project saved", 5000);
         return true;

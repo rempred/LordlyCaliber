@@ -344,6 +344,8 @@ target_sources(lordly_ui PRIVATE app/scene_timeline.cpp app/scene_key_picker.cpp
 target_sources(lordly_engine PRIVATE rebuild/scene_logic.cpp)
 target_sources(lordly_engine PRIVATE rebuild/user_patches.cpp)
 target_sources(lordly_ui PRIVATE app/code_patch_dialog.cpp)
+target_sources(lordly_engine PRIVATE engine/agent_activity.cpp)
+target_sources(lordly_ui PRIVATE app/agents_page.cpp)
 qt_add_resources(lordly_engine scene_logic_sources PREFIX "/" BASE . FILES game/director/story-logic.c game/director/story-logic.json)
 qt_add_executable(LordlyCaliber app/main.cpp)
 target_link_libraries(LordlyCaliber PRIVATE lordly_ui)

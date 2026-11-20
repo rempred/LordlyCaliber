@@ -1,3 +1,5 @@
+**Tools → Agents** shows the portable CLI path, source ROM and saved project. Copy a task prompt for an agent, then open its saved project to review its work. CLI changes and source patches appear in the project changelog. Project folders and sharing archives retain the activity and editable patch source. See the [CLI guide](agent-cli.md) for scripts and examples.
+
 **Classes → Movement type → New movement type…** creates and assigns a type with
 neutral settings; copying an existing type is an explicit option.
 **Tools → Movement Types** edits names, base speeds, independent movement rules,

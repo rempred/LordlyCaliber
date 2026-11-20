@@ -83,10 +83,21 @@ class Project {
     void loadCampaignMap();
     void setCampaignMap(const QJsonObject &);
     const std::optional<CampaignMap> &campaignMap() const { return campaignMap_; }
-    ChangeReport changeReport(const Project *reference = nullptr) const;
+    ChangeReport changeReport(const Project *reference = nullptr,
+                              bool includeAgentActivity = true) const;
     ChangeReport compareWithRom(Rom reference) const;
     QJsonObject manifest() const;
     QJsonArray codePatches() const { return retained_["codePatches"].toArray(); }
+    QJsonArray agentActivity() const {
+        return retained_["agentActivity"].toArray();
+    }
+    void setAgentActivity(const QJsonArray &activity);
+    const QString &projectPath() const {
+        return projectPath_;
+    }
+    void setProjectPath(const QString &path) {
+        projectPath_ = path;
+    }
     void setCodePatches(const QJsonArray &patches);
     void applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy = SourcePolicy::RequireMatch);
     void importLegacy(const QJsonObject &object);
@@ -289,6 +300,7 @@ class Project {
     std::optional<Rom> battlefieldRom_;
     QJsonArray scenarioBattlefields_, originalScenarioBattlefields_;
     QJsonObject catalog_, retained_, legacy_;
+    QString projectPath_;
     bool legacyScenesImported_ = false;
     bool legacyAnimationSequencesImported_ = false;
     std::map<Table, QVector<Record>> tables_;

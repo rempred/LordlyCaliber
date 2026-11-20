@@ -1,5 +1,6 @@
 #include "app/agent_commands.h"
 #include "app/agent_disassembly.h"
+#include "engine/agent_activity.h"
 #include "engine/archive.h"
 #include "engine/consumable_visual.h"
 #include "engine/project_references.h"
@@ -72,6 +73,8 @@ const QMap<QString, Domain> domains = {
     {"personalNames",
      {[](Project &p) { return p.personalNames().json(); }, &Project::setPersonalNames}}};
 const QMap<QString, QString> operations = {
+    {"agent.edits",
+     "project CLI activity, newest first, with status against current project values"},
     {"lookup", "query words; search shipped reference passages and the per-function intake table. "
                "Returns the file, line and matching text."},
     {"symbol", "name; exact matched function, its source, original owned ranges and symbol "
@@ -308,6 +311,8 @@ QJsonObject preparePatch(const QDir &root, QJsonObject patch) {
 QJsonValue execute(Project &p, const QJsonObject &o, const QDir &root, const QString &tools,
                    bool &edited) {
     const auto op = required(o, "op"), query = o["query"].toString();
+    if (op == "agent.edits")
+        return agentEditRows(p);
     QJsonArray result;
     if (op == "lookup") {
         const auto terms = required(o, "query").simplified().split(' ', Qt::SkipEmptyParts);
@@ -730,9 +735,30 @@ QJsonObject agentCapabilities() {
 QJsonArray runAgentCommands(Project &project, const QJsonArray &commands, const QString &library,
                             const QString &tools, bool &edited) {
     QJsonArray result;
+    std::optional<Project> before;
+    QStringList actions;
+    auto flush = [&] {
+        if (!before)
+            return;
+        recordAgentEdits(*before, project, "CLI commands", actions);
+        before.reset();
+        actions.clear();
+    };
     for (const auto &v : commands) {
         try {
             const auto command = v.toObject();
+            const auto op = command["op"].toString();
+            if (op == "agent.edits" || op == "changes" || op == "manifest")
+                flush();
+            if (op == "set" || op == "create" || op == "apply" || op.endsWith(".set") ||
+                op.startsWith("patch.")) {
+                if (!before)
+                    before.emplace(project);
+                const auto label =
+                    op + " " + command["table"].toString() + command["name"].toString();
+                if (!actions.contains(label.trimmed()))
+                    actions.append(label.trimmed());
+            }
             auto value = execute(project, command, QDir(library), tools, edited);
             if (command.contains("page")) {
                 if (!value.isArray() || !command["page"].isObject())
@@ -755,6 +781,7 @@ QJsonArray runAgentCommands(Project &project, const QJsonArray &commands, const 
                             .arg(v.toObject()["op"].toString(), QString::fromUtf8(e.what())));
         }
     }
+    flush();
     return result;
 }
 } // namespace lordly

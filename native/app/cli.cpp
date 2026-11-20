@@ -9,9 +9,11 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -26,6 +28,13 @@ int main(int argc, char **argv) {
             qputenv("QT_QPA_PLATFORM", "offscreen");
         QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
         app = std::make_unique<QApplication>(argc, argv);
+        if (QGuiApplication::platformName() == "offscreen") {
+            // The offscreen plugin does not load the Windows system font database.
+            const QDir fonts(QStandardPaths::writableLocation(QStandardPaths::FontsLocation));
+            for (const auto name : {"segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "georgia.ttf",
+                                    "georgiab.ttf", "pala.ttf", "palab.ttf", "consola.ttf"})
+                QFontDatabase::addApplicationFont(fonts.filePath(name));
+        }
     } else
         app = std::make_unique<QCoreApplication>(argc, argv);
     app->setApplicationName("LordlyCaliber-cli");
@@ -172,6 +181,7 @@ int main(int argc, char **argv) {
                 project.applyManifest(manifest);
             else
                 project.importLegacy(manifest);
+            project.setProjectPath(QFileInfo(parser.value("project")).absoluteFilePath());
         }
         if (workspace) {
             if (!project.rom().revision()) {

@@ -1,4 +1,5 @@
 #include "engine/mission_tables.h"
+#include "engine/agent_activity.h"
 #include "engine/project.h"
 #include "engine/weapon_status.h"
 #include "engine/squad_members.h"
@@ -116,7 +117,7 @@ ChangeReport Project::compareWithRom(Rom rom) const {
     return current.changeReport(&reference);
 }
 
-ChangeReport Project::changeReport(const Project *reference) const {
+ChangeReport Project::changeReport(const Project *reference, bool includeAgentActivity) const {
     const auto &baseRom = reference ? reference->rom_ : rom_;
     ChangeReport report;
     report.source = QFileInfo(baseRom.sourcePath()).fileName();
@@ -912,6 +913,16 @@ ChangeReport Project::changeReport(const Project *reference) const {
     for (const auto &section : pendingLegacySections())
         add("Imported project data", friendly(section),
             {"Retained browser data awaiting native conversion; not a verified ROM edit."});
+    if (includeAgentActivity) {
+        for (const auto &v : agentEditRows(*this)) {
+            const auto r = v.toObject();
+            add("CLI edits", r["subject"].toString(),
+                {r["description"].toString(), r["status"].toString() + " · " +
+                                                  r["source"].toString() + " · " +
+                                                  r["time"].toString()},
+                {"agents"});
+        }
+    }
     return report;
 }
 } // namespace lordly

@@ -1,5 +1,6 @@
 #include "app/view_position.h"
 #include "app/tools_editor.h"
+#include "app/agents_page.h"
 #include "app/movement_types_editor.h"
 #include "app/game_rules_editor.h"
 #include "app/training_editor.h"
@@ -137,6 +138,7 @@ ToolsEditor::ToolsEditor(Project *project, QUndoStack *undo, std::function<void(
     rewards->addStretch();
     auto extras=page("Display and options");
     pages->addTab(new MovementTypesEditor(project_,undo_,changed_),"Movement Types");
+    pages->addTab(new AgentsPage(project_, undo_), "Agents");
     pages->addTab(new NamesTextEditor(project_,undo_,changed_),"Names and Text");
     auto box = new QGroupBox("Battle experience");
     auto fields = new QVBoxLayout(box);

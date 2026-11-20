@@ -1,5 +1,6 @@
 #include "engine/cursor_boundary.h"
 #include "engine/project.h"
+#include "engine/agent_activity.h"
 #include "rebuild/user_patches.h"
 #include "engine/rom_writer.h"
 #include "engine/movement_runtime.h"
@@ -1522,7 +1523,15 @@ void Project::setCodePatches(const QJsonArray &patches) {
     if (patches.isEmpty()) retained_.remove("codePatches");
     else retained_["codePatches"] = patches;
 }
+void Project::setAgentActivity(const QJsonArray &activity) {
+    if (activity.isEmpty())
+        retained_.remove("agentActivity");
+    else
+        retained_["agentActivity"] = activity;
+}
 void Project::applyManifest(const QJsonObject &object, SourcePolicy sourcePolicy) {
+    if (object.contains("agentActivity"))
+        validateAgentActivity(object["agentActivity"]);
     if (object.contains("codePatches")) validateUserPatches(object["codePatches"]);
     if (object.value("format") != "LordlyCaliberProject" || object.value("version").toInt() != 1)
         throw Error("Unsupported native project format");

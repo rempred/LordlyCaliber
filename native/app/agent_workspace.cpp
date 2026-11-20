@@ -728,7 +728,7 @@ int runAgentWorkspace(QApplication &app, Project project, const QString &input) 
         if (!script.open(QIODevice::ReadOnly))
             throw Error("Cannot open workspace command file");
     }
-    MainWindow window;
+    MainWindow window(nullptr, true);
     window.installProject(std::move(project));
     window.show();
     Workspace workspace(window);

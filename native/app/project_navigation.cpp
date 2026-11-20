@@ -64,6 +64,10 @@ void MainWindow::navigateTo(const EditLocation &location) {
         };
         QWidget *destination = nullptr;
         const auto &kind = location.editor;
+        if (kind == "agents") {
+            reveal(findChild<QWidget *>("agentsPage"));
+            return;
+        }
         if (kind == "Code patches") {
             if (auto action = findChild<QAction *>("showProjectCodePatches")) action->trigger();
             return;

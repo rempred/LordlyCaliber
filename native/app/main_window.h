@@ -17,12 +17,16 @@ namespace lordly {
 class MainWindow : public QMainWindow {
     Q_OBJECT
   public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr, bool agentSession = false);
     ~MainWindow() override;
     void loadRom(const QString &path);
     bool openProjectFile(const QString &path);
     void installProject(Project project);
     bool saveProjectTo(QString path, bool archive);
+    Project activitySnapshot() const;
+    bool agentSession() const {
+        return agentSession_;
+    }
     void navigateTo(const EditLocation &);
     bool openRecoveryFile(const QString &path, const QString &sourceRom);
 
@@ -50,6 +54,8 @@ class MainWindow : public QMainWindow {
     void beginRecoverySession();
     QJsonObject catalog_;
     std::unique_ptr<Project> project_;
+    bool agentSession_ = false;
+    std::unique_ptr<Project> agentBaseline_;
     QUndoStack *undo_;
     QUndoGroup *undoGroup_;
     QTabWidget *workspaces_;
