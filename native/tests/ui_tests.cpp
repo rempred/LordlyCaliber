@@ -118,6 +118,7 @@
 #include <QTextBrowser>
 #include <QTimeEdit>
 #include <QTimer>
+#include <QToolBar>
 #include <QTreeWidget>
 #include <QUndoGroup>
 #include <QWheelEvent>
@@ -1452,6 +1453,107 @@ QVERIFY(editor.grab().save("campaign-world-map.png"));
         attacks->findChild<QPushButton *>("attackEditAnimation")->click();QCoreApplication::processEvents();
         auto action=window.findChild<QComboBox *>("combatAnimationAction");auto cls=window.findChild<QComboBox *>("combatAnimationClass");QVERIFY(action);QVERIFY(cls);
         QCOMPARE(cls->currentData().toInt(),2);QCOMPARE(action->currentData().toInt(),4);QVERIFY(action->isVisible());
+    }
+    void cliDesktopNamedProjectRoundTrip() {
+        const auto rom = qEnvironmentVariable("LORDLY_TEST_ROM");
+        const auto cli = qEnvironmentVariable("LORDLY_TEST_CLI");
+        if (rom.isEmpty() || cli.isEmpty()) QSKIP("Set LORDLY_TEST_ROM and the packaged LORDLY_TEST_CLI");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("Knight and Berserker.json");
+        auto commands = [&](const QString &option, const QByteArray &ops, QJsonArray &results) {
+            QProcess process;
+            process.setWorkingDirectory(dir.path());
+            process.start(cli, {"--rom", rom, "--commands", "-", option, path});
+            QVERIFY(process.waitForStarted());
+            process.write(ops);
+            process.closeWriteChannel();
+            QVERIFY(process.waitForFinished(60000));
+            QVERIFY2(process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0,
+                     process.readAllStandardError().constData());
+            results = QJsonDocument::fromJson(process.readAllStandardOutput()).object()["results"].toArray();
+        };
+        QJsonArray before;
+        commands("--save-project", R"([
+            {"op":"set","table":"classes","ids":[5],"values":{"strBase":301}},
+            {"op":"patch.put","patch":{"id":"round_trip","owner":"func_002831E0","language":"asm",
+             "source":"jr $ra\naddiu $v0,$zero,42\n"}},
+            {"op":"patches"},{"op":"agent.edits"}])", before);
+        QCOMPARE(before.size(), 4);
+        QCOMPARE(before[3].toArray().size(), 2);
+        QVERIFY(QFileInfo(path).isFile());
+
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        MainWindow window;
+        window.resize(1500, 950);
+        window.show();
+        window.loadRom(rom);
+        QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QTableView *>("classesTable"), 60000);
+        auto bar = window.findChild<QToolBar *>("projectActions");
+        QVERIFY(bar);
+        auto chooseProject = [&](const QString &actionName, const QString &title) {
+            auto action = window.findChild<QAction *>(actionName);
+            QVERIFY(action && bar->widgetForAction(action));
+            QTimer::singleShot(0, &window, [&] {
+                auto dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+                QVERIFY(dialog);
+                const auto closeOnFailure = qScopeGuard([&] { if (QTest::currentTestFailed()) dialog->reject(); });
+                QCOMPARE(dialog->windowTitle(), title);
+                dialog->selectFile(path);
+                if (dialog->acceptMode() == QFileDialog::AcceptSave) {
+                    QTimer::singleShot(0, dialog, [] {
+                        auto confirm = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+                        QVERIFY(confirm && confirm->button(QMessageBox::Yes));
+                        confirm->button(QMessageBox::Yes)->click();
+                    });
+                }
+                QMetaObject::invokeMethod(dialog, "accept");
+            });
+            QTest::mouseClick(bar->widgetForAction(action), Qt::LeftButton);
+        };
+        chooseProject("openSavedProject", "Load project file");
+        window.navigateTo({"classes", 6});
+        auto table = window.findChild<QTableView *>("classesTable");
+        QVERIFY(table && table->isVisible());
+        auto proxy = qobject_cast<QSortFilterProxyModel *>(table->model());
+        QVERIFY(proxy);
+        int column = 0;
+        while (column < proxy->columnCount() && proxy->headerData(column, Qt::Horizontal).toString() != "STR base")
+            ++column;
+        QVERIFY(column < proxy->columnCount());
+        auto strength = [&](int id) { return proxy->mapFromSource(proxy->sourceModel()->index(id, column)); };
+        QCOMPARE(strength(5).data(Qt::EditRole).toInt(), 301);
+        QCOMPARE(strength(6).data(Qt::EditRole).toInt(), 70);
+        table->setCurrentIndex(strength(6));
+        table->setFocus();
+        QTest::keyClick(table, Qt::Key_F2);
+        auto field = table->findChild<QSpinBox *>();
+        QVERIFY(field && field->isVisible());
+        field->selectAll();
+        QTest::keyClicks(field, "302");
+        QCOMPARE(field->value(), 302);
+        QTest::keyClick(field, Qt::Key_Return);
+        QTRY_COMPARE(strength(6).data(Qt::EditRole).toInt(), 302);
+        chooseProject("saveProjectFile", "Save project file");
+
+        QJsonArray after;
+        commands("--project", R"([{"op":"records","table":"classes","ids":[5,6],"fields":["strBase"]},
+                                  {"op":"patches"},{"op":"agent.edits"},{"op":"changes"}])", after);
+        QCOMPARE(after.size(), 4);
+        const auto rows = after[0].toArray();
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows[0].toObject()["values"].toObject()["strBase"].toInt(), 301);
+        QCOMPARE(rows[1].toObject()["values"].toObject()["strBase"].toInt(), 302);
+        QCOMPARE(after[1], before[2]);
+        const auto patch = after[1].toArray().at(0).toObject();
+        QCOMPARE(patch["source"].toString(), "jr $ra\naddiu $v0,$zero,42\n");
+        QCOMPARE(after[2], before[3]);
+        const auto changelog = after[3].toString();
+        QVERIFY2(changelog.contains("Knight (ID 5)\n  - Stats / STR base: 70 → 301") &&
+                 changelog.contains("Berserker (ID 6)\n  - Stats / STR base: 70 → 302") &&
+                 changelog.contains("round_trip (asm, enabled)") &&
+                 changelog.contains("CLI edits") && changelog.contains("Added assembly patch"),
+                 qPrintable(changelog));
     }
     void dataTableCopyAndCsv() {
         const auto path = qEnvironmentVariable("LORDLY_TEST_ROM");

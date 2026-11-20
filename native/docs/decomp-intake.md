@@ -18,7 +18,14 @@ The sound-effect audition uses the corrected request router and renders stereo a
 
 ## November 20 contributor matches
 
-Decomp PR 1 added 926 pure-C owners between `43a49d01` and `7177de63`.
+Connor (GitHub `cosburn92`) contributed 926 matching-C targets from his
+`vibe_ogre_decomp` project. His matches helped the editor reproduce retail
+cutscene input and actor selection, stereo sound panning, expanded-army
+cleanup, the mission clock and mission reward handling.
+[OB64-Decomp PR #1](https://github.com/rempred/OB64-Decomp/pull/1) ·
+[Connor’s per-target provenance](https://github.com/rempred/OB64-Decomp/issues/2)
+
+Decomp accepted the 926 pure-C owners between `43a49d01` and `7177de63`.
 All 926 participate in ordinary ROM export. The accepted library now has
 2,611 owners across 2,480 producer sources, including 35 older hybrid owners.
 The export compiler reproduced 2,626 code regions and 78 read-only regions.
